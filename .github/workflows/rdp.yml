@@ -1,27 +1,17 @@
-name: Windows-Mobile-RDP
+name: Windows-Mobile-RDP-Tailscale
 on: workflow_dispatch
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-    - name: Download Ngrok
+    - name: Download and Install Tailscale
       run: |
-        Invoke-WebRequest -Uri "equinox.io" -OutFile "ngrok.zip"
-        Expand-Archive ngrok.zip -DestinationPath .
-    - name: Create Ngrok Configuration File
+        Invoke-WebRequest -Uri "tailscale.com" -OutFile "tailscale-setup.exe"
+        Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/qn" -Wait
+    - name: Connect to Tailscale Network
       run: |
-        $config = @"
-        version: "3"
-        agent:
-          authtoken: "${{ secrets.NGROK_AUTH_TOKEN }}"
-        tunnels:
-          rdp:
-            proto: tcp
-            addr: 3389
-            region: ap
-        "@
-        Set-Content -Path "ngrok.yml" -Value $config
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
     - name: Configure Secure Password
       run: |
         net user runneradmin MobileRDPPassword123!
@@ -29,8 +19,7 @@ jobs:
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - name: Start Tunnel Engine
+    - name: Keep Server Alive
       run: |
-        Start-Process ./ngrok.exe -ArgumentList "start --all --config ngrok.yml"
         Start-Sleep -Seconds 21600
         
