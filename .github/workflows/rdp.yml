@@ -1,0 +1,24 @@
+name: Windows-Mobile-RDP
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Download and Configure Ngrok
+      run: |
+        Invoke-WebRequest -Uri "equinox.io" -OutFile "ngrok.zip"
+        Expand-Archive ngrok.zip -DestinationPath .
+        ./ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Configure Secure Password
+      run: |
+        net user runneradmin MobileRDPPassword123!
+    - name: Activate Windows RDP
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+    - name: Create Tunnel & Stay Online
+      run: |
+        Start-Process ./ngrok.exe -ArgumentList "tcp --region ap 3389"
+        Start-Sleep -Seconds 21600
+        
