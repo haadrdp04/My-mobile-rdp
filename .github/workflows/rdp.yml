@@ -5,13 +5,18 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - name: Download and Install Tailscale
+    - name: Download Tailscale Installer
       run: |
-        Invoke-WebRequest -Uri "tailscale.com" -OutFile "tailscale-setup.exe"
-        Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/qn" -Wait
+        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
+    - name: Install Tailscale
+      run: |
+        Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet", "/norestart" -Wait
     - name: Connect to Tailscale Network
       run: |
-        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="github-rdp"
+    - name: Display IP Address
+      run: |
+        & "C:\Program Files\Tailscale\tailscale.exe" ip -4
     - name: Configure Secure Password
       run: |
         net user runneradmin MobileRDPPassword123!
