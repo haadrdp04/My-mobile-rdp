@@ -5,7 +5,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI (Using exact url: https://tailscale.com/install.sh)
+    # 1. Install Tailscale CLI (Using your exact URL)
     - name: Install Tailscale CLI
       run: |
         curl -fsSL https://tailscale.com/install.sh | sh
@@ -15,22 +15,22 @@ jobs:
       run: |
         sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
 
-    # 3. Add Official Kali Linux Repository & Keys (Using exact keys and repo urls)
+    # 3. Add Official Kali Linux Repository & Keys (Using your exact URLs)
     - name: Add Kali Linux Repositories
       run: |
         sudo apt-get update
         sudo apt-get install -y gnupg wget curl debconf
         
-        # Sahi GPG Keyring link:
+        # 1. Your exact GPG Link
         sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
         
-        # Sahi Repository URL:
+        # 2. Your exact Repo URL setup
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
-    # 4. Install Kali Tools & Desktop Environment (Fixed Architecture Conflict)
+    # 4. Install Kali Tools & Desktop Environment (Fixed Architecture & Version Conflicts)
     - name: Install Kali Tools & Desktop
       run: |
-        # APT Pinning configuration taaki base-files clash na karein
+        # APT Pinning config: Prevents core system package clashes
         sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
         Package: base-files
         Pin: release o=Kali
@@ -41,13 +41,20 @@ jobs:
         Pin-Priority: -1
         EOF
 
-        # Package cache refresh
+        # Upgrade Ubuntu base packages to align dependencies (Perl/Qt6)
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+
+        # Manually seed missing graphics and base dependencies
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libegl1 perl-base xserver-xorg-core
+
+        # Refresh package index lists
         sudo apt-get update || true
         
-        # Wireshark prompts ko auto-bypass karein
+        # Bypass interactive Wireshark prompt lock automatically
         echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
         
-        # Silent unattended setup tools ke liye
+        # Force-install tools using non-interactive parameters
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           --allow-unauthenticated \
           --fix-broken \
@@ -57,7 +64,7 @@ jobs:
           lxde lxpanel lxterminal xrdp \
           nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
         
-        # User aur RDP management session configurations
+        # User account configuration and desktop initialization
         sudo useradd -m -s /bin/bash kaliuser || true
         echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
         sudo usermod -aG sudo kaliuser
