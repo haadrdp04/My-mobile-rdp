@@ -25,16 +25,19 @@ jobs:
             tail -f /dev/null
           "
 
-    # 2. Start Serveo Raw TCP Tunnel (Bypass everything natively)
-    - name: Start Serveo TCP Tunnel
+    # 2. Start Raw TCP Tunnel via LocalTunnel / Node.js
+    - name: Start TCP Tunnel
       run: |
-        echo "Starting SSH tunnel via Serveo..."
-        # Background SSH tunnel jo port 3389 ko serveo par map kar dega
-        nohup ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net > serveo.log 2>&1 &
-        sleep 8
+        # Node.js install karo agar nahi hai
+        sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+        sudo npm install -g localtunnel
+        
+        # Background mein localtunnel chalao port 3389 ke liye
+        nohup lt --port 3389 > lt.log 2>&1 &
+        sleep 6
         echo "=========================================="
-        echo "SERVEO RDP CONNECTION DETAILS:"
-        cat serveo.log
+        echo "LOCALTUNNEL RDP URL / DETAILS:"
+        cat lt.log
         echo "=========================================="
         
     # 3. Keep Server Alive (6 Hours)
