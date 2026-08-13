@@ -1,30 +1,49 @@
-name: Windows-Mobile-RDP-Tailscale
+name: Kali-Mobile-RDP-Tailscale
 on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
-    - name: Download Tailscale Installer
+    # 1. Tailscale Download & Install
+    - name: Install Tailscale CLI
       run: |
-        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
-    - name: Install Tailscale
+        curl -fsSL https://tailscale.com/install.sh | sh
+
+    # 2. Connect to Tailscale Network
+    - name: Connect to Tailscale
       run: |
-        Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet", "/norestart" -Wait
-    - name: Connect to Tailscale Network
-      run: |
-        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="github-rdp"
+        sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="github-kali-rdp"
+
+    # 3. Display IP Address in Logs
     - name: Display IP Address
       run: |
-        & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-    - name: Configure Secure Password
+        tailscale ip -4
+
+    # 4. Install Desktop & RDP
+    - name: Install LXDE Desktop & RDP
       run: |
-        net user runneradmin MobileRDPPassword123!
-    - name: Activate Windows RDP
-      run: |
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        sudo apt-get update
+        sudo apt-get install -y lxde xrdp net-tools curl wget git python3
+        
+        # User Setup
+        sudo useradd -m -s /bin/bash kaliuser || true
+        echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
+        sudo usermod -aG sudo kaliuser
+        
+        # Smooth LXDE Session Setup
+        echo "lxsession -s LXDE -e LXDE" | sudo tee /home/kaliuser/.xsession
+        sudo chown kaliuser:kaliuser /home/kaliuser/.xsession
+        
+        # Restart RDP Service
+        sudo service xrdp restart
+
+    # 5. Keep Alive 6 Hours
     - name: Keep Server Alive
       run: |
-        Start-Sleep -Seconds 21600
-        
+        echo "=========================================="
+        echo "Linux RDP is LIVE on Tailscale!"
+        echo "Username: kaliuser"
+        echo "Password: MobileRDPPassword123!"
+        echo "=========================================="
+        sleep 21600
