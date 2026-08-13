@@ -5,10 +5,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI (Sahi URL ke sath)
+    # 1. Install Tailscale CLI (Using Bash Pipe)
     - name: Install Tailscale CLI
       run: |
-        curl -fsSL https://tailscale.com | sh
+        curl -fsSL https://tailscale.com | bash
 
     # 2. Connect to Tailscale Network
     - name: Connect to Tailscale
