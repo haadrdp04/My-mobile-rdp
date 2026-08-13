@@ -8,7 +8,7 @@ jobs:
     # 1. Install Tailscale CLI (Using your exact URL)
     - name: Install Tailscale CLI
       run: |
-        curl -fsSL https://tailscale.com | sh
+        curl -fsSL https://tailscale.com/install.sh | sh
 
     # 2. Connect to Tailscale Network
     - name: Connect to Tailscale
@@ -25,7 +25,7 @@ jobs:
         sudo curl -fsSL https://kali.org -o /usr/share/keyrings/kali-archive-keyring.gpg
         
         # 2. Your exact Repo URL setup
-        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://kali.org kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
+        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
     # 4. Install Kali Tools & Desktop Environment (Fixed Architecture & Runner System Safety)
     - name: Install Kali Tools & Desktop
