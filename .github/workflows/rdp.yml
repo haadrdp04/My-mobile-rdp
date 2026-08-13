@@ -1,65 +1,22 @@
-name: Real-Kali-Mobile-RDP
-on: workflow_dispatch
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    # 1. Install Tailscale CLI (Using your exact correct URL)
-    - name: Install Tailscale CLI
+- name: Install Tools & Desktop (Clean & Fixed)
       run: |
-        curl -fsSL https://tailscale.com/install.sh | sh
-
-    # 2. Connect to Tailscale Network
-    - name: Connect to Tailscale
-      run: |
-        sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
-
-    # 3. Add Official Kali Linux Repository & Keys (Using your exact correct URLs)
-    - name: Add Kali Linux Repositories
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gnupg wget curl debconf
-        
-        # 1. Your exact correct GPG Link
-        sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
-        
-        # 2. Your exact correct Repo URL setup
-        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
-
-    # 4. Install Kali Tools & Desktop Environment (Fixed Version Mismatch Conflicts)
-    - name: Install Kali Tools & Desktop
-      run: |
-        # Core system components and library safety protection block config to prevent libc6/mesa breaks
+        # Core system components and library safety protection block config
         sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
-        Package: base-files
+        Package: *
         Pin: release o=Kali
-        Pin-Priority: -1
-
-        Package: sysvinit-utils
-        Pin: release o=Kali
-        Pin-Priority: -1
-
-        Package: mesa-libgallium libegl-mesa0 libgbm1 libc6
-        Pin: release *
         Pin-Priority: -1
         EOF
 
-        # 1. Refresh packages catalog index with keyring anchor
-        sudo apt-get update -o Dir::Etc::trustedparts="/usr/share/keyrings/" || true
+        # 1. Refresh packages catalog index securely
+        sudo apt-get update || true
 
         # 2. Pre-seed basic desktop configs and bypass Wireshark prompt locks automatically
         echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
         
-        # 3. Force-install tools under strict system permission rules to bypass dependency clashes
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          --allow-unauthenticated \
-          --fix-broken \
-          -o Dpkg::Options::="--force-confdef" \
-          -o Dpkg::Options::="--force-confold" \
-          -o Dpkg::Options::="--force-overwrite" \
+        # 3. Install Desktop environment, XRDP, and core tools cleanly from Ubuntu repos to avoid version hell
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
           lxde lxpanel lxterminal xrdp \
-          nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
+          nmap sqlmap aircrack-ng john hydra gobuster net-tools curl wget git
         
         # User configurations and remote desktop deployment rules
         sudo useradd -m -s /bin/bash kaliuser || true
@@ -70,13 +27,3 @@ jobs:
         sudo chown kaliuser:kaliuser /home/kaliuser/.xsession
         
         sudo service xrdp restart
-
-    # 5. Keep Server Alive (6 Hours)
-    - name: Keep Server Alive
-      run: |
-        echo "=========================================="
-        echo "Real Kali Linux Tools RDP is LIVE!"
-        echo "Username: kaliuser"
-        echo "Password: MobileRDPPassword123!"
-        echo "=========================================="
-        sleep 21600
