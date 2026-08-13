@@ -27,10 +27,10 @@ jobs:
         # 2. Your exact Repo URL setup
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
-    # 4. Install Kali Tools & Desktop Environment (Fixed Signature & Architecture Conflicts)
+    # 4. Install Kali Tools & Desktop Environment (Fixed Graphic Engine Conflicts)
     - name: Install Kali Tools & Desktop
       run: |
-        # Core system components protection block config
+        # Core system components and library safety protection block config
         sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
         Package: base-files
         Pin: release o=Kali
@@ -40,24 +40,21 @@ jobs:
         Pin: release o=Kali
         Pin-Priority: -1
         
-        Package: cloud-init uuid-runtime dhcpcd-base tcpdump nvme-cli
-        Pin: release o=Kali
-        Pin-Priority: -1
+        Package: mesa-libgallium libegl-mesa0 libgbm1
+        Pin: release *
+        Pin-Priority: 990
         EOF
 
-        # 1. Force APT to use the downloaded keyring directly during update to avoid NO_PUBKEY error
+        # 1. Refresh packages catalog index with keyring anchor
         sudo apt-get update -o Dir::Etc::trustedparts="/usr/share/keyrings/" || true
 
-        # 2. Force seed specific package versions that Kali tools require
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
-          libegl1 xserver-xorg-core perl-base
-
-        # 3. Bypass interactive Wireshark prompt locks automatically
+        # 2. Pre-seed basic desktop configs and bypass Wireshark prompt locks automatically
         echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
         
-        # 4. Install Kali Tools using strict overwrite rules and unauthenticated bypass
+        # 3. Force-install tools under strict system downgrade permission rules to fix Mesa issue
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           --allow-unauthenticated \
+          --allow-downgrades \
           --fix-broken \
           -o Dpkg::Options::="--force-confdef" \
           -o Dpkg::Options::="--force-confold" \
