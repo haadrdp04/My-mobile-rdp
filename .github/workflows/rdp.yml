@@ -5,24 +5,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI (Official Link)
+    # 1. Install Tailscale CLI (Exact Official Link)
     - name: Install Tailscale CLI
       run: |
-        curl -fsSL https://tailscale.com | sh
+        curl -fsSL https://tailscale.com/install.sh | sh
 
     # 2. Connect to Tailscale Network
     - name: Connect to Tailscale
       run: |
         sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
 
-    # 3. Add Official Kali Linux Repository & Keys (Aap ke laye hue link ke sath)
+    # 3. Add Official Kali Linux Repository & Keys (Official Keyring Link)
     - name: Add Kali Linux Repositories
       run: |
         sudo apt-get update
         sudo apt-get install -y gnupg wget curl
-        # Aap ka laya hua official keyring link yahan set kar diya hai:
-        sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
-        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
+        sudo curl -fsSL https://kali.org -o /usr/share/keyrings/kali-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://kali.org kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
     # 4. Install Kali Tools & Desktop Environment
     - name: Install Kali Tools & Desktop
