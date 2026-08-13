@@ -8,7 +8,7 @@ jobs:
     # 1. Install Tailscale CLI (Using your exact URL)
     - name: Install Tailscale CLI
       run: |
-        curl -fsSL https://tailscale.com/install.sh | sh
+        curl -fsSL https://tailscale.com | sh
 
     # 2. Connect to Tailscale Network
     - name: Connect to Tailscale
@@ -22,15 +22,15 @@ jobs:
         sudo apt-get install -y gnupg wget curl debconf
         
         # 1. Your exact GPG Link
-        sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
+        sudo curl -fsSL https://kali.org -o /usr/share/keyrings/kali-archive-keyring.gpg
         
         # 2. Your exact Repo URL setup
-        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
+        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://kali.org kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
-    # 4. Install Kali Tools & Desktop Environment (Fixed Architecture & Version Conflicts)
+    # 4. Install Kali Tools & Desktop Environment (Fixed Architecture & Runner System Safety)
     - name: Install Kali Tools & Desktop
       run: |
-        # APT Pinning config: Prevents core system package clashes
+        # Core system components protection block config
         sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
         Package: base-files
         Pin: release o=Kali
@@ -39,22 +39,23 @@ jobs:
         Package: sysvinit-utils
         Pin: release o=Kali
         Pin-Priority: -1
+        
+        Package: cloud-init uuid-runtime dhcpcd-base tcpdump nvme-cli
+        Pin: release o=Kali
+        Pin-Priority: -1
         EOF
 
-        # Upgrade Ubuntu base packages to align dependencies (Perl/Qt6)
-        sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-
-        # Manually seed missing graphics and base dependencies
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libegl1 perl-base xserver-xorg-core
-
-        # Refresh package index lists
+        # 1. Only update cache indexes without touching runner OS core tools
         sudo apt-get update || true
-        
-        # Bypass interactive Wireshark prompt lock automatically
+
+        # 2. Force seed specific package manager versions that Kali tools require
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
+          libegl1 xserver-xorg-core perl-base
+
+        # 3. Bypass interactive Wireshark prompt locks automatically
         echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
         
-        # Force-install tools using non-interactive parameters
+        # 4. Install Kali Tools using strict overwrite rules to avoid environment blocks
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           --allow-unauthenticated \
           --fix-broken \
@@ -64,7 +65,7 @@ jobs:
           lxde lxpanel lxterminal xrdp \
           nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
         
-        # User account configuration and desktop initialization
+        # User configurations and remote desktop deployment rules
         sudo useradd -m -s /bin/bash kaliuser || true
         echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
         sudo usermod -aG sudo kaliuser
