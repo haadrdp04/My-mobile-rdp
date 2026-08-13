@@ -1,29 +1,46 @@
-- name: Install Tools & Desktop (Clean & Fixed)
+name: Real-Kali-Mobile-RDP
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    # 1. Install Tailscale CLI
+    - name: Install Tailscale CLI
       run: |
-        # Core system components and library safety protection block config
-        sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
-        Package: *
-        Pin: release o=Kali
-        Pin-Priority: -1
-        EOF
+        curl -fsSL https://tailscale.com/install.sh | sh
 
-        # 1. Refresh packages catalog index securely
-        sudo apt-get update || true
+    # 2. Connect to Tailscale Network
+    - name: Connect to Tailscale
+      run: |
+        sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
 
-        # 2. Pre-seed basic desktop configs and bypass Wireshark prompt locks automatically
-        echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
-        
-        # 3. Install Desktop environment, XRDP, and core tools cleanly from Ubuntu repos to avoid version hell
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          lxde lxpanel lxterminal xrdp \
-          nmap sqlmap aircrack-ng john hydra gobuster net-tools curl wget git
-        
-        # User configurations and remote desktop deployment rules
-        sudo useradd -m -s /bin/bash kaliuser || true
-        echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
-        sudo usermod -aG sudo kaliuser
-        
-        echo "lxsession -s LXDE -e LXDE" | sudo tee /home/kaliuser/.xsession
-        sudo chown kaliuser:kaliuser /home/kaliuser/.xsession
-        
-        sudo service xrdp restart
+    # 3. Run Kali Linux inside Docker (Zero Dependency Conflicts!)
+    - name: Deploy Kali Linux & Tools via Docker
+      run: |
+        # Docker container start karenge jisme Kali rolling aur saare tools honge
+        docker run -d --name kali-container --privileged \
+          -p 3389:3389 \
+          kalilinux/kali-rolling \
+          bash -c "
+            apt-get update && \
+            DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            lxde xrdp kali-linux-default nmap sqlmap metasploit-framework wireshark john hydra nikto gobuster && \
+            useradd -m -s /bin/bash kaliuser && \
+            echo 'kaliuser:MobileRDPPassword123!' | chpasswd && \
+            usermod -aG sudo kaliuser && \
+            echo 'exec startlxde' > /home/kaliuser/.xsession && \
+            chown kaliuser:kaliuser /home/kaliuser/.xsession && \
+            service xrdp start && \
+            tail -f /dev/null
+          "
+
+    # 4. Keep Server Alive (6 Hours)
+    - name: Keep Server Alive
+      run: |
+        echo "=========================================="
+        echo "Real Kali Linux Docker RDP is LIVE!"
+        echo "Username: kaliuser"
+        echo "Password: MobileRDPPassword123!"
+        echo "=========================================="
+        sleep 21600
