@@ -30,14 +30,15 @@ jobs:
             tail -f /dev/null
           "
 
-    # 3. Start Cloudflare Tunnel for TCP Port 3389
+    # 3. Start Cloudflare Tunnel with fixed regex matching
     - name: Start Cloudflare Tunnel
       run: |
         nohup cloudflared tunnel --url rdp://localhost:3389 > cf.log 2>&1 &
-        sleep 5
+        echo "Waiting for tunnel to connect..."
+        sleep 10
         echo "=========================================="
         echo "CLOUDFLARE RDP URL:"
-        grep -o 'https://[-0-9a-z]*\.trycloudflare.com' cf.log || echo "Check logs for URL"
+        grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' cf.log || cat cf.log
         echo "=========================================="
         
     # 4. Keep Server Alive (6 Hours)
