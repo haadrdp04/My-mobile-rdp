@@ -10,15 +10,16 @@ jobs:
       run: |
         curl -fsSL https://tailscale.com/install.sh | sh
 
-    # 2. Connect to Tailscale Network
+    # 2. Connect to Tailscale Network and get its IP
+    - name: Connect to Tailscale
     - name: Connect to Tailscale
       run: |
         sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
+        echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
 
-    # 3. Run Kali Linux inside Docker (Zero Dependency Conflicts!)
+    # 3. Run Kali Linux inside Docker
     - name: Deploy Kali Linux & Tools via Docker
       run: |
-        # Docker container start karenge jisme Kali rolling aur saare tools honge
         docker run -d --name kali-container --privileged \
           -p 3389:3389 \
           kalilinux/kali-rolling \
@@ -35,11 +36,13 @@ jobs:
             tail -f /dev/null
           "
 
-    # 4. Keep Server Alive (6 Hours)
+    # 4. Show Connection Details & Keep Server Alive (6 Hours)
     - name: Keep Server Alive
       run: |
         echo "=========================================="
         echo "Real Kali Linux Docker RDP is LIVE!"
+        echo "Tailscale IP to connect: ${{ env.TAILSCALE_IP }}"
+        echo "Port: 3389"
         echo "Username: kaliuser"
         echo "Password: MobileRDPPassword123!"
         echo "=========================================="
