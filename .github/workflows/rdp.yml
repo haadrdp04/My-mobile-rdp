@@ -5,15 +5,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI (Using Bash Pipe)
-    - name: Install Tailscale CLI
-      run: |
-        curl -fsSL https://tailscale.com | bash
-
-    # 2. Connect to Tailscale Network
-    - name: Connect to Tailscale
-      run: |
-        sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
+    # 1 aur 2. Install aur Connect Tailscale (Official Action)
+    - name: Tailscale Connection
+      uses: tailscale/github-action@v2
+      with:
+        oauth-client-id: ${{ secrets.TAILSCALE_CLIENT_ID }}
+        oauth-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
+        hostname: "real-kali-rdp"
 
     # 3. Add Official Kali Linux Repository & Keys
     - name: Add Kali Linux Repositories
