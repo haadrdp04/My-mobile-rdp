@@ -1,45 +1,35 @@
-name: Real-Kali-Mobile-RDP
+name: Windows-Native-RDP
 on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
-    # 1. Deploy Kali Linux & Tools via Docker
-    - name: Deploy Kali Linux & Tools via Docker
-      run: |
-        docker run -d --name kali-container --privileged \
-          -p 3389:3389 \
-          kalilinux/kali-rolling \
-          bash -c "
-            apt-get update && \
-            DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            lxde xrdp kali-linux-default nmap sqlmap metasploit-framework wireshark john hydra nikto gobuster curl wget openssh-client && \
-            useradd -m -s /bin/bash kaliuser && \
-            echo 'kaliuser:MobileRDPPassword123!' | chpasswd && \
-            usermod -aG sudo kaliuser && \
-            echo 'exec startlxde' > /home/kaliuser/.xsession && \
-            chown kaliuser:kaliuser /home/kaliuser/.xsession && \
-            rm -f /var/run/xrdp/xrdp.pid && \
-            service xrdp start && \
-            tail -f /dev/null
-          "
+      # 1. Enable Windows RDP Built-in Feature
+      - name: Enable Remote Desktop
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-    # 2. Start Direct Raw TCP Tunnel via Pinggy (No heavy npm install needed)
-    - name: Start Pinggy TCP Tunnel
-      run: |
-        echo "Starting Pinggy TCP tunnel for RDP..."
-        nohup ssh -o StrictHostKeyChecking=no -p 443 -R0:localhost:3389 tcp.pinggy.io > pinggy.log 2>&1 &
-        sleep 8
-        echo "=========================================="
-        echo "PINGGY RDP CONNECTION DETAILS:"
-        cat pinggy.log
-        echo "=========================================="
-        echo "LOCALTUNNEL RDP URL / DETAILS:"
-        cat lt.log
-        echo "=========================================="
-        
-    # 3. Keep Server Alive (6 Hours)
-    - name: Keep Server Alive
-      run: |
-        sleep 21600
+      # 2. Install Tailscale CLI on Windows
+      - name: Install Tailscale
+        run: |
+          winget install Tailscale.Tailscale --silent
+
+      # 3. Connect to Tailscale Network
+      - name: Connect to Tailscale
+        run: |
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="windows-rdp-server"
+
+      # 4. Show IP Details & Keep Alive
+      - name: Keep Server Alive
+        run: |
+          Write-Host "=========================================="
+          Write-Host "Windows Native RDP is LIVE!"
+          Write-Host "Tailscale IP:"
+          & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          Write-Host "Username: runneradmin"
+          Write-Host "Password Check runner profile or default"
+          Write-Host "=========================================="
+          Start-Sleep -Seconds 21600
