@@ -22,12 +22,12 @@ jobs:
         sudo apt-get install -y gnupg wget curl debconf
         
         # 1. Your exact GPG Link
-        sudo curl -fsSL https://kali.org -o /usr/share/keyrings/kali-archive-keyring.gpg
+        sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
         
         # 2. Your exact Repo URL setup
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
-    # 4. Install Kali Tools & Desktop Environment (Fixed Architecture & Runner System Safety)
+    # 4. Install Kali Tools & Desktop Environment (Fixed Signature & Architecture Conflicts)
     - name: Install Kali Tools & Desktop
       run: |
         # Core system components protection block config
@@ -45,17 +45,17 @@ jobs:
         Pin-Priority: -1
         EOF
 
-        # 1. Only update cache indexes without touching runner OS core tools
-        sudo apt-get update || true
+        # 1. Force APT to use the downloaded keyring directly during update to avoid NO_PUBKEY error
+        sudo apt-get update -o Dir::Etc::trustedparts="/usr/share/keyrings/" || true
 
-        # 2. Force seed specific package manager versions that Kali tools require
+        # 2. Force seed specific package versions that Kali tools require
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
           libegl1 xserver-xorg-core perl-base
 
         # 3. Bypass interactive Wireshark prompt locks automatically
         echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
         
-        # 4. Install Kali Tools using strict overwrite rules to avoid environment blocks
+        # 4. Install Kali Tools using strict overwrite rules and unauthenticated bypass
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           --allow-unauthenticated \
           --fix-broken \
