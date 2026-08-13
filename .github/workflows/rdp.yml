@@ -5,7 +5,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI
+    # 1. Install Tailscale CLI (Fixed)
     - name: Install Tailscale CLI
       run: |
         curl -fsSL https://tailscale.com | sh
@@ -15,34 +15,29 @@ jobs:
       run: |
         sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
 
-    # 3. Add Official Kali Linux Repository & Keys (Fixed URL)
+    # 3. Add Official Kali Linux Repository & Keys
     - name: Add Kali Linux Repositories
       run: |
         sudo apt-get update
         sudo apt-get install -y gnupg wget curl
-        # Yahan .gpg ki jagah ab sahi link .asc wala lagaya hai:
-        curl -fsSL https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/kali-archive-keyring.gpg
-        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
+        curl -fsSL https://kali.org | sudo gpg --dearmor -o /usr/share/keyrings/kali-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://kali.org kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
     # 4. Install Kali Tools & Desktop Environment
     - name: Install Kali Tools & Desktop
       run: |
         sudo apt-get update || true
-        # Install LXDE Desktop + Real Kali Tools (Non-interactive flags ke sath)
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
           lxde lxpanel lxterminal xrdp \
           nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
         
-        # User Setup
         sudo useradd -m -s /bin/bash kaliuser || true
         echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
         sudo usermod -aG sudo kaliuser
         
-        # Configure LXDE Session
         echo "lxsession -s LXDE -e LXDE" | sudo tee /home/kaliuser/.xsession
         sudo chown kaliuser:kaliuser /home/kaliuser/.xsession
         
-        # Restart RDP Service
         sudo service xrdp restart
 
     # 5. Keep Server Alive (6 Hours)
