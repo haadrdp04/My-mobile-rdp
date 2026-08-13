@@ -19,22 +19,33 @@ jobs:
     - name: Add Kali Linux Repositories
       run: |
         sudo apt-get update
-        sudo apt-get install -y gnupg wget curl
+        sudo apt-get install -y gnupg wget curl debconf
         
-        # Aap ka diya hua GPG Keyring link:
+        # Sahi GPG Keyring link:
         sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
         
-        # Aap ka diya hua Repository URL:
+        # Sahi Repository URL:
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
     # 4. Install Kali Tools & Desktop Environment
     - name: Install Kali Tools & Desktop
       run: |
+        # Package updates cache refresh karein
         sudo apt-get update || true
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
+        
+        # Wireshark ke background prompt ko automatic bypass (Yes) karein taaki pipeline block na ho
+        echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
+        
+        # Force-unattended parameters ke sath Kali packages ko automatic bypass karke install karein
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          --allow-unauthenticated \
+          --fix-broken \
+          -o Dpkg::Options::="--force-confdef" \
+          -o Dpkg::Options::="--force-confold" \
           lxde lxpanel lxterminal xrdp \
           nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
         
+        # User aur RDP management configurations
         sudo useradd -m -s /bin/bash kaliuser || true
         echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
         sudo usermod -aG sudo kaliuser
