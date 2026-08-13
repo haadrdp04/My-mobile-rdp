@@ -5,7 +5,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Run Kali Linux inside Docker (with XRDP stability fix)
+    # 1. Deploy Kali Linux & Tools via Docker
     - name: Deploy Kali Linux & Tools via Docker
       run: |
         docker run -d --name kali-container --privileged \
@@ -14,7 +14,7 @@ jobs:
           bash -c "
             apt-get update && \
             DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            lxde xrdp kali-linux-default nmap sqlmap metasploit-framework wireshark john hydra nikto gobuster curl wget && \
+            lxde xrdp kali-linux-default nmap sqlmap metasploit-framework wireshark john hydra nikto gobuster curl wget openssh-client && \
             useradd -m -s /bin/bash kaliuser && \
             echo 'kaliuser:MobileRDPPassword123!' | chpasswd && \
             usermod -aG sudo kaliuser && \
@@ -25,16 +25,16 @@ jobs:
             tail -f /dev/null
           "
 
-    # 2. Start Raw TCP Tunnel via Bore (Works natively with any RDP app)
-    - name: Start TCP Tunnel
+    # 2. Start Serveo Raw TCP Tunnel (Bypass everything natively)
+    - name: Start Serveo TCP Tunnel
       run: |
-        curl -Ls https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz | tar zx
-        nohup ./bore local 3389 --to bore.pub > bore.log 2>&1 &
-        sleep 5
+        echo "Starting SSH tunnel via Serveo..."
+        # Background SSH tunnel jo port 3389 ko serveo par map kar dega
+        nohup ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net > serveo.log 2>&1 &
+        sleep 8
         echo "=========================================="
-        echo "RDP CONNECTION DETAILS:"
-        echo "Put this exactly in your RDP App:"
-        grep -o 'bore.pub:[0-9]*' bore.log || cat bore.log
+        echo "SERVEO RDP CONNECTION DETAILS:"
+        cat serveo.log
         echo "=========================================="
         
     # 3. Keep Server Alive (6 Hours)
