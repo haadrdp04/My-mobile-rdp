@@ -12,17 +12,23 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-      # 2. Install Tailscale CLI on Windows
-      - name: Install Tailscale
+      # 2. Set Password for runneradmin
+      - name: Set RDP Password
         run: |
-          winget install Tailscale.Tailscale --silent
+          net user runneradmin "MobileRDPPassword123!"
 
-      # 3. Connect to Tailscale Network
+      # 3. Download & Install Tailscale Silently (Bypassing winget prompt)
+      - name: Install Tailscale Silently
+        run: |
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi" -OutFile "tailscale-setup.msi"
+          Start-Process msiexec.exe -ArgumentList '/i tailscale-setup.msi /quiet /norestart' -Wait
+
+      # 4. Connect to Tailscale Network
       - name: Connect to Tailscale
         run: |
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="windows-rdp-server"
 
-      # 4. Show IP Details & Keep Alive
+      # 5. Show IP Details & Keep Alive
       - name: Keep Server Alive
         run: |
           Write-Host "=========================================="
@@ -30,6 +36,6 @@ jobs:
           Write-Host "Tailscale IP:"
           & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           Write-Host "Username: runneradmin"
-          Write-Host "Password Check runner profile or default"
+          Write-Host "Password: MobileRDPPassword123!"
           Write-Host "=========================================="
           Start-Sleep -Seconds 21600
