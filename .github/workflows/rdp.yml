@@ -5,18 +5,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI
-    - name: Install Tailscale CLI
+    # 1. Install Cloudflared
+    - name: Install Cloudflare Tunnel
       run: |
-        curl -fsSL https://tailscale.com/install.sh | sh
+        curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+        sudo dpkg -i cloudflared.deb
 
-    # 2. Connect to Tailscale Network and get its IP
-    - name: Connect to Tailscale
-      run: |
-        sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
-        echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
-
-    # 3. Run Kali Linux inside Docker smoothly
+    # 2. Run Kali Linux inside Docker & Expose via XRDP
     - name: Deploy Kali Linux & Tools via Docker
       run: |
         docker run -d --name kali-container --privileged \
@@ -35,14 +30,17 @@ jobs:
             tail -f /dev/null
           "
 
-    # 4. Show Connection Details & Keep Server Alive (6 Hours)
+    # 3. Start Cloudflare Tunnel for TCP Port 3389
+    - name: Start Cloudflare Tunnel
+      run: |
+        nohup cloudflared tunnel --url rdp://localhost:3389 > cf.log 2>&1 &
+        sleep 5
+        echo "=========================================="
+        echo "CLOUDFLARE RDP URL:"
+        grep -o 'https://[-0-9a-z]*\.trycloudflare.com' cf.log || echo "Check logs for URL"
+        echo "=========================================="
+        
+    # 4. Keep Server Alive (6 Hours)
     - name: Keep Server Alive
       run: |
-        echo "=========================================="
-        echo "Real Kali Linux Docker RDP is LIVE!"
-        echo "Tailscale IP to connect: ${{ env.TAILSCALE_IP }}"
-        echo "Port: 3389"
-        echo "Username: kaliuser"
-        echo "Password: MobileRDPPassword123!"
-        echo "=========================================="
         sleep 21600
