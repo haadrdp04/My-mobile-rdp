@@ -20,15 +20,16 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y gnupg wget curl
-        wget -q -O - https://archive.kali.org/archive-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/kali-archive-keyring.gpg
+        # GPG key download karne ke liye wget ki jagah curl ka use kiya hai:
+        curl -fsSL https://archive.kali.org/archive-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/kali-archive-keyring.gpg
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
     # 4. Install Kali Tools & Desktop Environment
     - name: Install Kali Tools & Desktop
       run: |
         sudo apt-get update || true
-        # Install LXDE Desktop + Real Kali Tools
-        sudo apt-get install -y --allow-unauthenticated \
+        # Install LXDE Desktop + Real Kali Tools (Non-interactive flags ke sath)
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
           lxde lxpanel lxterminal xrdp \
           nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
         
