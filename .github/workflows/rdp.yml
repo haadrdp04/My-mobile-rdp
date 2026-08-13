@@ -27,40 +27,43 @@ jobs:
         # Sahi Repository URL:
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
-    # 4. Install Kali Tools & Desktop Environment
-    - name: Install Kali Tools & Desktop
-      run: |
-        # Package updates cache refresh karein
-        sudo apt-get update || true
-        
-        # Wireshark ke background prompt ko automatic bypass (Yes) karein taaki pipeline block na ho
-        echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
-        
-        # Force-unattended parameters ke sath Kali packages ko automatic bypass karke install karein
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          --allow-unauthenticated \
-          --fix-broken \
-          -o Dpkg::Options::="--force-confdef" \
-          -o Dpkg::Options::="--force-confold" \
-          lxde lxpanel lxterminal xrdp \
-          nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
-        
-        # User aur RDP management configurations
-        sudo useradd -m -s /bin/bash kaliuser || true
-        echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
-        sudo usermod -aG sudo kaliuser
-        
-        echo "lxsession -s LXDE -e LXDE" | sudo tee /home/kaliuser/.xsession
-        sudo chown kaliuser:kaliuser /home/kaliuser/.xsession
-        
-        sudo service xrdp restart
+    
+        # 4. Install Kali Tools & Desktop Environment
+    name: Install Kali Tools & Desktop
+    run: |
+      # 1. APT Pinning setup karein taaki Kali ke core base-files Ubuntu ko crash na karein
+      sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
+      Package: base-files
+      Pin: release o=Kali
+      Pin-Priority: -1
 
-    # 5. Keep Server Alive (6 Hours)
-    - name: Keep Server Alive
-      run: |
-        echo "=========================================="
-        echo "Real Kali Linux Tools RDP is LIVE!"
-        echo "Username: kaliuser"
-        echo "Password: MobileRDPPassword123!"
-        echo "=========================================="
-        sleep 21600
+      Package: sysvinit-utils
+      Pin: release o=Kali
+      Pin-Priority: -1
+      EOF
+
+      # Package updates cache refresh karein
+      sudo apt-get update || true
+      
+      # Wireshark ke background prompt ko automatic bypass karein
+      echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
+      
+      # Force parameters ke sath packages install karein (ab base-files error nahi aayega)
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        --allow-unauthenticated \
+        --fix-broken \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        -o Dpkg::Options::="--force-overwrite" \
+        lxde lxpanel lxterminal xrdp \
+        nmap sqlmap metasploit-framework wireshark aircrack-ng john hydra nikto gobuster wpscan net-tools
+      
+      # User aur RDP management configurations
+      sudo useradd -m -s /bin/bash kaliuser || true
+      echo "kaliuser:MobileRDPPassword123!" | sudo chpasswd
+      sudo usermod -aG sudo kaliuser
+      
+      echo "lxsession -s LXDE -e LXDE" | sudo tee /home/kaliuser/.xsession
+      sudo chown kaliuser:kaliuser /home/kaliuser/.xsession
+      
+      sudo service xrdp restart
