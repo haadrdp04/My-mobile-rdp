@@ -17,11 +17,10 @@ jobs:
         run: |
           net user runneradmin "MobileRDPPassword123!"
 
-      # 3. Download & Install Tailscale Silently (Bypassing winget prompt)
+      # 3. Install Tailscale Silently via Winget (Non-interactive source agreement bypass)
       - name: Install Tailscale Silently
         run: |
-          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi" -OutFile "tailscale-setup.msi"
-          Start-Process msiexec.exe -ArgumentList '/i tailscale-setup.msi /quiet /norestart' -Wait
+          winget install --id Tailscale.Tailscale --silent --accept-source-agreements --accept-package-agreements
 
       # 4. Connect to Tailscale Network
       - name: Connect to Tailscale
