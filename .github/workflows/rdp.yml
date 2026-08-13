@@ -5,7 +5,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Tailscale CLI (Using your exact URL)
+    # 1. Install Tailscale CLI (Using your exact correct URL)
     - name: Install Tailscale CLI
       run: |
         curl -fsSL https://tailscale.com/install.sh | sh
@@ -15,22 +15,22 @@ jobs:
       run: |
         sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="real-kali-rdp"
 
-    # 3. Add Official Kali Linux Repository & Keys (Using your exact URLs)
+    # 3. Add Official Kali Linux Repository & Keys (Using your exact correct URLs)
     - name: Add Kali Linux Repositories
       run: |
         sudo apt-get update
         sudo apt-get install -y gnupg wget curl debconf
         
-        # 1. Your exact GPG Link
+        # 1. Your exact correct GPG Link
         sudo curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
         
-        # 2. Your exact Repo URL setup
+        # 2. Your exact correct Repo URL setup
         echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
 
-    # 4. Install Kali Tools & Desktop Environment (Fixed Graphic Engine Conflicts)
+    # 4. Install Kali Tools & Desktop Environment (Fixed Version Mismatch Conflicts)
     - name: Install Kali Tools & Desktop
       run: |
-        # Core system components and library safety protection block config
+        # Core system components and library safety protection block config to prevent libc6/mesa breaks
         sudo tee /etc/apt/preferences.d/kali-fix << 'EOF'
         Package: base-files
         Pin: release o=Kali
@@ -39,10 +39,10 @@ jobs:
         Package: sysvinit-utils
         Pin: release o=Kali
         Pin-Priority: -1
-        
-        Package: mesa-libgallium libegl-mesa0 libgbm1
+
+        Package: mesa-libgallium libegl-mesa0 libgbm1 libc6
         Pin: release *
-        Pin-Priority: 990
+        Pin-Priority: -1
         EOF
 
         # 1. Refresh packages catalog index with keyring anchor
@@ -51,10 +51,9 @@ jobs:
         # 2. Pre-seed basic desktop configs and bypass Wireshark prompt locks automatically
         echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
         
-        # 3. Force-install tools under strict system downgrade permission rules to fix Mesa issue
+        # 3. Force-install tools under strict system permission rules to bypass dependency clashes
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           --allow-unauthenticated \
-          --allow-downgrades \
           --fix-broken \
           -o Dpkg::Options::="--force-confdef" \
           -o Dpkg::Options::="--force-confold" \
