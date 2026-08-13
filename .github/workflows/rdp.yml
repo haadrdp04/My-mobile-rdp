@@ -25,16 +25,15 @@ jobs:
             tail -f /dev/null
           "
 
-    # 2. Start Raw TCP Tunnel via LocalTunnel / Node.js
-    - name: Start TCP Tunnel
+    # 2. Start Direct Raw TCP Tunnel via Pinggy (No heavy npm install needed)
+    - name: Start Pinggy TCP Tunnel
       run: |
-        # Node.js install karo agar nahi hai
-        sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
-        sudo npm install -g localtunnel
-        
-        # Background mein localtunnel chalao port 3389 ke liye
-        nohup lt --port 3389 > lt.log 2>&1 &
-        sleep 6
+        echo "Starting Pinggy TCP tunnel for RDP..."
+        nohup ssh -o StrictHostKeyChecking=no -p 443 -R0:localhost:3389 tcp.pinggy.io > pinggy.log 2>&1 &
+        sleep 8
+        echo "=========================================="
+        echo "PINGGY RDP CONNECTION DETAILS:"
+        cat pinggy.log
         echo "=========================================="
         echo "LOCALTUNNEL RDP URL / DETAILS:"
         cat lt.log
