@@ -5,13 +5,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    # 1. Install Cloudflared
-    - name: Install Cloudflare Tunnel
-      run: |
-        curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-        sudo dpkg -i cloudflared.deb
-
-    # 2. Run Kali Linux inside Docker & Expose via XRDP
+    # 1. Run Kali Linux inside Docker (with XRDP stability fix)
     - name: Deploy Kali Linux & Tools via Docker
       run: |
         docker run -d --name kali-container --privileged \
@@ -20,28 +14,30 @@ jobs:
           bash -c "
             apt-get update && \
             DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            lxde xrdp kali-linux-default nmap sqlmap metasploit-framework wireshark john hydra nikto gobuster && \
+            lxde xrdp kali-linux-default nmap sqlmap metasploit-framework wireshark john hydra nikto gobuster curl wget && \
             useradd -m -s /bin/bash kaliuser && \
             echo 'kaliuser:MobileRDPPassword123!' | chpasswd && \
             usermod -aG sudo kaliuser && \
             echo 'exec startlxde' > /home/kaliuser/.xsession && \
             chown kaliuser:kaliuser /home/kaliuser/.xsession && \
+            rm -f /var/run/xrdp/xrdp.pid && \
             service xrdp start && \
             tail -f /dev/null
           "
 
-    # 3. Start Cloudflare Tunnel with fixed regex matching
-    - name: Start Cloudflare Tunnel
+    # 2. Start Raw TCP Tunnel via Bore (Works natively with any RDP app)
+    - name: Start TCP Tunnel
       run: |
-        nohup cloudflared tunnel --url rdp://localhost:3389 > cf.log 2>&1 &
-        echo "Waiting for tunnel to connect..."
-        sleep 10
+        curl -Ls https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz | tar zx
+        nohup ./bore local 3389 --to bore.pub > bore.log 2>&1 &
+        sleep 5
         echo "=========================================="
-        echo "CLOUDFLARE RDP URL:"
-        grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' cf.log || cat cf.log
+        echo "RDP CONNECTION DETAILS:"
+        echo "Put this exactly in your RDP App:"
+        grep -o 'bore.pub:[0-9]*' bore.log || cat bore.log
         echo "=========================================="
         
-    # 4. Keep Server Alive (6 Hours)
+    # 3. Keep Server Alive (6 Hours)
     - name: Keep Server Alive
       run: |
         sleep 21600
