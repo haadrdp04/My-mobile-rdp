@@ -1,7 +1,7 @@
 name: Automated MT5 Trading Session
 
 on:
-  workflow_dispatch: # Allows 1-tap start from phone
+  workflow_dispatch:
 
 jobs:
   launch-trader:
@@ -16,17 +16,41 @@ jobs:
         run: |
           Write-Host "Downloading MT5 installer..."
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
+          
           Write-Host "Installing MT5..."
-          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto" -Wait
-          Start-Sleep -Seconds 10
+          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`""
+          
+          Write-Host "Waiting for MT5 installation to complete..."
+          $timeout = 30
+          while ($timeout -gt 0) {
+            if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") {
+              Write-Host "MT5 successfully installed!"
+              break
+            }
+            Start-Sleep -Seconds 4
+            $timeout--
+          }
 
       - name: Copy & Compile EA via Cloud CLI
         run: |
-          Write-Host "Copying EA from .github/workflows/ folder..."
-          Copy-Item -Path ".github/workflows/InstitutionalAlgoEA.mq5" -Destination "C:\Program Files\MetaTrader 5\MQL5\Experts\InstitutionalAlgoEA.mq5" -Force
+          $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
+          Write-Host "Creating target folder if missing..."
+          if (-not (Test-Path $targetDir)) {
+            New-Item -ItemType Directory -Path $targetDir -Force
+          }
+
+          Write-Host "Locating InstitutionalAlgoEA.mq5..."
+          $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
+          if (-not $eaPath) {
+            Write-Error "Could not find InstitutionalAlgoEA.mq5!"
+            exit 1
+          }
+          
+          Write-Host "Copying EA to MT5..."
+          Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
           Write-Host "Compiling EA to .ex5..."
-          & "C:\Program Files\MetaTrader 5\metaeditor64.exe" /compile:"C:\Program Files\MetaTrader 5\MQL5\Experts\InstitutionalAlgoEA.mq5" /log:"C:\Program Files\MetaTrader 5\compile.log"
+          & "C:\Program Files\MetaTrader 5\metaeditor64.exe" /compile:"$targetDir\InstitutionalAlgoEA.mq5" /log:"C:\Program Files\MetaTrader 5\compile.log"
           
           Start-Sleep -Seconds 5
           if (Test-Path "C:\Program Files\MetaTrader 5\compile.log") {
@@ -62,7 +86,7 @@ jobs:
           Write-Host "Starting MT5 and running bot session..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:startup.ini"
           
-          # Keeps runner active for 3.5 hours
+          # Keeps session active for 3.5 hours
           Start-Sleep -Seconds 12600
 
       - name: Session Finished
