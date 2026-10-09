@@ -14,14 +14,24 @@ jobs:
 
       - name: Install MT5 Silently
         run: |
+          Write-Host "Downloading MT5 installer..."
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
-          Start-Process -FilePath "mt5setup.exe" -ArgumentList "/portable /auto" -Wait
+          Write-Host "Installing MT5..."
+          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto" -Wait
+          Start-Sleep -Seconds 10
 
       - name: Copy & Compile EA via Cloud CLI
         run: |
-          Copy-Item -Path "InstitutionalAlgoEA.mq5" -Destination "C:\Program Files\MetaTrader 5\MQL5\Experts\" -Force
-          # Cloud MetaEditor automatically compiles .mq5 into .ex5
+          Write-Host "Copying EA from .github/workflows/ folder..."
+          Copy-Item -Path ".github/workflows/InstitutionalAlgoEA.mq5" -Destination "C:\Program Files\MetaTrader 5\MQL5\Experts\InstitutionalAlgoEA.mq5" -Force
+
+          Write-Host "Compiling EA to .ex5..."
           & "C:\Program Files\MetaTrader 5\metaeditor64.exe" /compile:"C:\Program Files\MetaTrader 5\MQL5\Experts\InstitutionalAlgoEA.mq5" /log:"C:\Program Files\MetaTrader 5\compile.log"
+          
+          Start-Sleep -Seconds 5
+          if (Test-Path "C:\Program Files\MetaTrader 5\compile.log") {
+            Get-Content "C:\Program Files\MetaTrader 5\compile.log"
+          }
 
       - name: Generate Login Config
         env:
@@ -49,11 +59,13 @@ jobs:
 
       - name: Run Bot Session
         run: |
-          Write-Host "Starting MT5 and running bot..."
+          Write-Host "Starting MT5 and running bot session..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:startup.ini"
-          # Runs for 3.5 hours
+          
+          # Keeps runner active for 3.5 hours
           Start-Sleep -Seconds 12600
 
       - name: Session Finished
         run: |
+          Write-Host "Session complete. Closing terminal..."
           Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
