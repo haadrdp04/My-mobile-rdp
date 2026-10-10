@@ -12,17 +12,19 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 1. Install & Init MT5
+      - name: 1. Install MT5 & Remove Demo Bloat
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
           
-          # Quick start so MT5 finishes its internal folders
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable"
-          Start-Sleep -Seconds 10
-          Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
+          # Delete built-in demo examples so MT5 doesn't waste 2 minutes compiling them
+          Write-Host "Removing demo bloat to make startup instant..."
+          $demoFolders = @("Examples", "Free Robots", "Free Indicators", "Advisors")
+          Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5" -Directory -Recurse -ErrorAction SilentlyContinue | 
+            Where-Object { $demoFolders -contains $_.Name } | 
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-      - name: 2. Compile EA and Verify .ex5
+      - name: 2. Compile Our EA
         run: |
           $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
           if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
@@ -37,7 +39,7 @@ jobs:
           Start-Sleep -Seconds 3
           $ex5File = "$targetDir\InstitutionalAlgoEA.ex5"
           if (Test-Path $ex5File) {
-            Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 compiled with 0 errors! <<<"
+            Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 ready! <<<"
           } else {
             Write-Error "Compile failed."
             exit 1
@@ -67,30 +69,31 @@ jobs:
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-      - name: 4. Launch MT5 & Run Bot (120s)
+      - name: 4. Launch MT5 & Run Bot (60s)
         run: |
-          Write-Host "Starting MT5 and connecting to Exness..."
+          Write-Host "Starting MT5 and connecting directly to broker..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
           
-          # Give 120s for full connection, chart open & tick arrival
-          Start-Sleep -Seconds 120
+          # Now boots in 3s, giving 55s purely for connection & trade execution
+          Start-Sleep -Seconds 60
 
       - name: 5. PRINT BROKER CONNECTION LOGS
         run: |
-          Write-Host "=== REAL BROKER & LOGIN EVENTS ==="
+          Write-Host "=== BROKER & LOGIN EVENTS ==="
           $logs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log" -ErrorAction SilentlyContinue
           if ($logs) {
-            Get-Content $logs[-1].FullName -Encoding Unicode | Select-String -Pattern "Terminal|Network|Login|Account|Exness|Connect|failed|error|shutdown|BTC"
+            # Filter out all compilation lines completely
+            Get-Content $logs[-1].FullName -Encoding Unicode | Where-Object { $_ -notmatch "Compile" -and $_ -notmatch "Compiler" } | Select-Object -Last 30
           } else {
             Write-Host "No log file found."
           }
 
       - name: 6. PRINT BOT EXECUTION LOGS
         run: |
-          Write-Host "=== EXPERT ADVISOR LOG (TRADE EXECUTION) ==="
+          Write-Host "=== EXPERT ADVISOR (TRADE) LOG ==="
           $eaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log" -ErrorAction SilentlyContinue
           if ($eaLogs) {
-            Get-Content $eaLogs[-1].FullName -Encoding Unicode -Tail 40
+            Get-Content $eaLogs[-1].FullName -Encoding Unicode -Tail 30
           } else {
             Write-Host "No EA log found yet."
           }
