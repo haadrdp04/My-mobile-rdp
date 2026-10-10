@@ -6,7 +6,7 @@ on:
 jobs:
   launch-trader:
     runs-on: windows-latest
-    timeout-minutes: 240
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Code
@@ -14,13 +14,9 @@ jobs:
 
       - name: Install MT5 Silently
         run: |
-          Write-Host "Downloading MT5 installer..."
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
-          
-          Write-Host "Installing MT5..."
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`""
           
-          Write-Host "Waiting for MT5 installation to complete..."
           $timeout = 30
           while ($timeout -gt 0) {
             if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") {
@@ -31,25 +27,16 @@ jobs:
             $timeout--
           }
 
-      - name: Copy & Compile EA via Cloud CLI
+      - name: Copy & Compile Test EA
         run: |
           $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
-          Write-Host "Creating target folder if missing..."
           if (-not (Test-Path $targetDir)) {
             New-Item -ItemType Directory -Path $targetDir -Force
           }
 
-          Write-Host "Locating InstitutionalAlgoEA.mq5..."
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
-          if (-not $eaPath) {
-            Write-Error "Could not find InstitutionalAlgoEA.mq5!"
-            exit 1
-          }
-          
-          Write-Host "Copying EA to MT5..."
           Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
-          Write-Host "Compiling EA to .ex5..."
           & "C:\Program Files\MetaTrader 5\metaeditor64.exe" /compile:"$targetDir\InstitutionalAlgoEA.mq5" /log:"C:\Program Files\MetaTrader 5\compile.log"
           
           Start-Sleep -Seconds 5
@@ -57,7 +44,7 @@ jobs:
             Get-Content "C:\Program Files\MetaTrader 5\compile.log"
           }
 
-      - name: Generate Login Config
+      - name: Generate Login Config for Exness
         env:
           EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
           EXNESS_PASSWORD: ${{ secrets.EXNESS_PASSWORD }}
@@ -75,7 +62,7 @@ jobs:
           AllowDLL=0
 
           [Start]
-          Symbol=XAUUSD
+          Symbol=BTCUSDm
           Period=M5
           Expert=InstitutionalAlgoEA
           "@
@@ -83,13 +70,8 @@ jobs:
 
       - name: Run Bot Session
         run: |
-          Write-Host "Starting MT5 and running bot session..."
+          Write-Host "Connecting to Exness and firing test order on Bitcoin..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:startup.ini"
           
-          # Keeps session active for 3.5 hours
-          Start-Sleep -Seconds 12600
-
-      - name: Session Finished
-        run: |
-          Write-Host "Session complete. Closing terminal..."
-          Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
+          # Wait 3 minutes to verify execution
+          Start-Sleep -Seconds 180
