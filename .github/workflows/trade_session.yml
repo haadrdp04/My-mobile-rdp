@@ -1,3 +1,4 @@
+
 name: Automated MT5 Trading Session
 
 on:
@@ -6,48 +7,35 @@ on:
 jobs:
   launch-trader:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install MT5 Silently
+      - name: 1. Install MT5
         run: |
-          Write-Host "Downloading MT5 installer..."
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`""
           
           $timeout = 30
           while ($timeout -gt 0) {
-            if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") {
-              Write-Host "MT5 successfully installed!"
-              break
-            }
+            if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") { break }
             Start-Sleep -Seconds 4
             $timeout--
           }
 
-      - name: Copy & Compile Test EA
+      - name: 2. Compile EA
         run: |
           $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
-          if (-not (Test-Path $targetDir)) {
-            New-Item -ItemType Directory -Path $targetDir -Force
-          }
+          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
 
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
           Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
-          Write-Host "=== COMPILING EA ==="
           & "C:\Program Files\MetaTrader 5\metaeditor64.exe" /compile:"$targetDir\InstitutionalAlgoEA.mq5" /log:"C:\Program Files\MetaTrader 5\compile.log"
-          
-          Start-Sleep -Seconds 4
-          if (Test-Path "C:\Program Files\MetaTrader 5\compile.log") {
-            Write-Host "--- COMPILE LOG ---"
-            Get-Content "C:\Program Files\MetaTrader 5\compile.log"
-          }
 
-      - name: Generate Login Config for Exness
+      - name: 3. Create Login Config
         env:
           EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
           EXNESS_PASSWORD: ${{ secrets.EXNESS_PASSWORD }}
@@ -71,30 +59,33 @@ jobs:
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-      - name: Run MT5 & Print Live Logs
+      - name: 4. Launch MT5 & Wait 45s
         run: |
-          Write-Host "Launching MT5 with portable config..."
-          # Pass explicit absolute path to startup.ini
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
-          
-          Write-Host "Waiting 60 seconds for MT5 to connect and trade..."
-          Start-Sleep -Seconds 60
+          Start-Sleep -Seconds 45
 
-          Write-Host "`n================== TERMINAL CONNECTION LOG =================="
-          $termLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log" -ErrorAction SilentlyContinue
-          if ($termLogs) {
-            Get-Content $termLogs[-1].FullName -Tail 50
+      - name: 5. VIEW COMPILER LOG
+        run: |
+          if (Test-Path "C:\Program Files\MetaTrader 5\compile.log") {
+            Get-Content "C:\Program Files\MetaTrader 5\compile.log"
           } else {
-            Write-Host "No terminal log generated yet."
+            Write-Host "No compile log found."
           }
 
-          Write-Host "`n================== EXPERT ADVISOR (BOT) LOG =================="
-          $expertLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log" -ErrorAction SilentlyContinue
-          if ($expertLogs) {
-            Get-Content $expertLogs[-1].FullName -Tail 50
+      - name: 6. VIEW EXNESS CONNECTION LOG
+        run: |
+          $logs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\Logs\*.log" -ErrorAction SilentlyContinue
+          if ($logs) {
+            Get-Content $logs[-1].FullName -Tail 40
           } else {
-            Write-Host "No expert log generated yet."
+            Write-Host "No connection log found yet."
           }
 
-          Write-Host "`nKeeping session alive for 2 more minutes..."
-          Start-Sleep -Seconds 120
+      - name: 7. VIEW BOT EXECUTION LOG
+        run: |
+          $eaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\MQL5\Logs\*.log" -ErrorAction SilentlyContinue
+          if ($eaLogs) {
+            Get-Content $eaLogs[-1].FullName -Tail 40
+          } else {
+            Write-Host "No EA log found yet."
+          }
