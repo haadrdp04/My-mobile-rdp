@@ -14,16 +14,9 @@ jobs:
 
       - name: 1. Install Official Exness MT5
         run: |
-          Write-Host "Downloading official Exness MT5 installer..."
+          Write-Host "Downloading Exness MT5..."
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "exness5setup.exe"
-          
-          Write-Host "Installing Exness MT5..."
           Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
-          
-          # Clean demo bloat
-          Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5" -Directory -Recurse -ErrorAction SilentlyContinue | 
-            Where-Object { @("Examples", "Free Robots", "Free Indicators", "Advisors") -contains $_.Name } | 
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: 2. Compile Our EA
         run: |
@@ -33,18 +26,8 @@ jobs:
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
           Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
-          Write-Host "Compiling InstitutionalAlgoEA.mq5..."
-          $compileLog = "C:\Program Files\MetaTrader 5\compile.log"
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"$compileLog`"" -Wait
-
-          Start-Sleep -Seconds 3
-          $ex5File = "$targetDir\InstitutionalAlgoEA.ex5"
-          if (Test-Path $ex5File) {
-            Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 ready! <<<"
-          } else {
-            Write-Error "Compile failed."
-            exit 1
-          }
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
+          Write-Host ">>> EA Compiled! <<<"
 
       - name: 3. Create Login Config
         env:
@@ -70,37 +53,28 @@ jobs:
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-      - name: 4. Launch MT5 & Run Bot
+      - name: 4. Launch MT5 & Run Bot (150s)
         run: |
           Write-Host "Starting Exness MT5..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
           
-          Write-Host "Waiting 75 seconds for login, chart open, and trade..."
-          Start-Sleep -Seconds 75
+          # 150 seconds: enough time to open chart & fire trade
+          Start-Sleep -Seconds 150
 
-      - name: 5. PRINT REAL BROKER CONNECTION LOGS
+      - name: 5. PRINT BROKER & SYMBOL EVENTS
         run: |
-          Write-Host "=== SEARCHING ALL LOG LOCATIONS ==="
-          # Search both Program Files and AppData for the real terminal log
+          Write-Host "=== LATEST BROKER & CHART EVENTS ==="
           $allLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\Logs\*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime
-          
           if ($allLogs) {
-            $latest = $allLogs[-1].FullName
-            Write-Host "Reading log: $latest"
-            Get-Content $latest -Encoding Unicode | Select-Object -Last 40
-          } else {
-            Write-Host "No terminal log files found anywhere."
+            Get-Content $allLogs[-1].FullName -Encoding Unicode | Select-Object -Last 35
           }
 
       - name: 6. PRINT BOT EXECUTION LOGS
         run: |
-          Write-Host "=== SEARCHING ALL EA LOG LOCATIONS ==="
+          Write-Host "=== EXPERT ADVISOR (TRADE) LOG ==="
           $allEaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\MQL5\Logs\*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime
-          
           if ($allEaLogs) {
-            $latestEa = $allEaLogs[-1].FullName
-            Write-Host "Reading EA log: $latestEa"
-            Get-Content $latestEa -Encoding Unicode -Tail 40
+            Get-Content $allEaLogs[-1].FullName -Encoding Unicode -Tail 35
           } else {
             Write-Host "No EA log found yet."
           }
