@@ -17,9 +17,9 @@ jobs:
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
           
-          # Initialize directory structure
+          # Quick start so MT5 finishes its internal folders
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable"
-          Start-Sleep -Seconds 8
+          Start-Sleep -Seconds 10
           Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
 
       - name: 2. Compile EA and Verify .ex5
@@ -31,7 +31,6 @@ jobs:
           Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
           Write-Host "Compiling InstitutionalAlgoEA.mq5..."
-          # Specific log file target
           $compileLog = "C:\Program Files\MetaTrader 5\compile.log"
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"$compileLog`"" -Wait
 
@@ -40,8 +39,7 @@ jobs:
           if (Test-Path $ex5File) {
             Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 compiled with 0 errors! <<<"
           } else {
-            Write-Host "Compile output:"
-            if (Test-Path $compileLog) { Get-Content $compileLog -Encoding Unicode }
+            Write-Error "Compile failed."
             exit 1
           }
 
@@ -69,20 +67,21 @@ jobs:
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-      - name: 4. Launch MT5 & Run Bot
+      - name: 4. Launch MT5 & Run Bot (120s)
         run: |
-          Write-Host "Starting MT5 in background..."
+          Write-Host "Starting MT5 and connecting to Exness..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
           
-          Write-Host "Waiting 60 seconds for broker connection and first tick..."
-          Start-Sleep -Seconds 60
+          # Give 120s for full connection, chart open & tick arrival
+          Start-Sleep -Seconds 120
 
-      - name: 5. PRINT TERMINAL LOGS
+      - name: 5. PRINT BROKER CONNECTION LOGS
         run: |
-          Write-Host "=== TERMINAL LOG (BROKER CONNECTION) ==="
+          Write-Host "=== BROKER CONNECTION LOG ==="
           $logs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log" -ErrorAction SilentlyContinue
           if ($logs) {
-            Get-Content $logs[-1].FullName -Encoding Unicode -Tail 40
+            # Filter out sample compilation spam and show real broker/account lines
+            Get-Content $logs[-1].FullName -Encoding Unicode | Where-Object { $_ -notmatch "Examples\\" } | Select-Object -Last 40
           } else {
             Write-Host "No terminal log found."
           }
@@ -94,5 +93,5 @@ jobs:
           if ($eaLogs) {
             Get-Content $eaLogs[-1].FullName -Encoding Unicode -Tail 40
           } else {
-            Write-Host "No EA log found."
+            Write-Host "No EA log found yet."
           }
