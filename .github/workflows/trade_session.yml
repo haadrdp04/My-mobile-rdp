@@ -77,13 +77,12 @@ jobs:
 
       - name: 5. PRINT BROKER CONNECTION LOGS
         run: |
-          Write-Host "=== BROKER CONNECTION LOG ==="
+          Write-Host "=== REAL BROKER & LOGIN EVENTS ==="
           $logs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log" -ErrorAction SilentlyContinue
           if ($logs) {
-            # Filter out sample compilation spam and show real broker/account lines
-            Get-Content $logs[-1].FullName -Encoding Unicode | Where-Object { $_ -notmatch "Examples\\" } | Select-Object -Last 40
+            Get-Content $logs[-1].FullName -Encoding Unicode | Select-String -Pattern "Terminal|Network|Login|Account|Exness|Connect|failed|error|shutdown|BTC"
           } else {
-            Write-Host "No terminal log found."
+            Write-Host "No log file found."
           }
 
       - name: 6. PRINT BOT EXECUTION LOGS
