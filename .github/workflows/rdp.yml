@@ -1,0 +1,58 @@
+name: Windows RDP with Exness MT5
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 1. Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+
+      - name: 2. Enable Remote Desktop (RDP)
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -value 0
+          
+          # Set Runner password to: Trader@1234
+          $Password = ConvertTo-SecureString "Trader@1234" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
+
+      - name: 3. Pre-Install Official Exness MT5
+        run: |
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "exness5setup.exe"
+          Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
+
+      - name: 4. Place EA on Desktop & in MT5
+        run: |
+          $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
+          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
+          
+          $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
+          Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
+
+          # Compile EA to .ex5
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
+          
+          # Copy to Desktop for easy drag-and-drop
+          Copy-Item -Path "$targetDir\InstitutionalAlgoEA.ex5" -Destination "$env:USERPROFILE\Desktop\InstitutionalAlgoEA.ex5" -Force -ErrorAction SilentlyContinue
+
+      - name: 5. Keep RDP Alive
+        run: |
+          Write-Host "=========================================="
+          Write-Host " RDP IS LIVE ON TAILSCALE! "
+          Write-Host " User: runneradmin"
+          Write-Host " Pass: Trader@1234"
+          Write-Host "=========================================="
+          
+          # Keeps RDP open for 5.5 hours
+          Start-Sleep -Seconds 19800
