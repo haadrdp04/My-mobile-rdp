@@ -1,0 +1,69 @@
+name: Windows-Native-RDP
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      # 0. Pull your repo so we have your bot code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. Enable Windows RDP Built-in Feature
+      - name: Enable Remote Desktop
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+      # 2. Set Password for runneradmin
+      - name: Set RDP Password
+        run: |
+          net user runneradmin "MobileRDPPassword123!"
+
+      # 3. Install Tailscale Silently via Winget
+      - name: Install Tailscale Silently
+        run: |
+          winget install --id Tailscale.Tailscale --silent --accept-source-agreements --accept-package-agreements
+
+      # 4. Connect to Tailscale Network
+      - name: Connect to Tailscale
+        run: |
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="windows-rdp-server"
+
+      # 5. Pre-Install Official Exness MT5 & Prepare Bot
+      - name: Install Exness MT5 & Setup Bot
+        run: |
+          Write-Host "Downloading and installing Exness MT5..."
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "exness5setup.exe"
+          Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
+          
+          # Setup Experts folder
+          $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
+          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
+          
+          # Locate and copy EA
+          $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
+          if ($eaPath) {
+            Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
+            # Compile EA into .ex5
+            Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
+          }
+
+          # Create MetaTrader 5 Desktop Shortcut
+          $WshShell = New-Object -ComObject WScript.Shell
+          $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\MetaTrader 5.lnk")
+          $Shortcut.TargetPath = "C:\Program Files\MetaTrader 5\terminal64.exe"
+          $Shortcut.Save()
+
+      # 6. Show IP Details & Keep Alive for 6 Hours
+      - name: Keep Server Alive
+        run: |
+          Write-Host "=========================================="
+          Write-Host "Windows Native RDP is LIVE!"
+          Write-Host "Tailscale IP:"
+          & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          Write-Host "Username: runneradmin"
+          Write-Host "Password: MobileRDPPassword123!"
+          Write-Host "=========================================="
+          Start-Sleep -Seconds 21600
