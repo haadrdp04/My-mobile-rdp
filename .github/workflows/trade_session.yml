@@ -16,9 +16,41 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
-          Start-Sleep -Seconds 15
+          
+          # Wait until terminal64.exe is fully on disk
+          $timeout = 30
+          while ($timeout -gt 0) {
+            if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") { break }
+            Start-Sleep -Seconds 3
+            $timeout--
+          }
 
-      - name: Setup Python & MT5 Library
+      - name: Bypass First-Time Welcome Popup
+        env:
+          EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
+          EXNESS_SERVER: ${{ secrets.EXNESS_SERVER }}
+        run: |
+          $configDir = "C:\Program Files\MetaTrader 5\Config"
+          if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force }
+          
+          # Writing common.ini suppresses the "Open Account" wizard
+          $commonIni = @"
+          [Common]
+          Login=$env:EXNESS_LOGIN
+          Server=$env:EXNESS_SERVER
+
+          [Experts]
+          Enabled=1
+          "@
+          Set-Content -Path "$configDir\common.ini" -Value $commonIni
+
+      - name: Pre-launch MT5 Background Service
+        run: |
+          Write-Host "Starting MT5 service in portable mode..."
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable"
+          Start-Sleep -Seconds 12
+
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -35,47 +67,61 @@ jobs:
         run: |
           python -c @"
           import os
+          import time
           import MetaTrader5 as mt5
 
           login_raw = os.environ.get('EXNESS_LOGIN')
           password = os.environ.get('EXNESS_PASSWORD')
           server = os.environ.get('EXNESS_SERVER')
 
-          print('=== STARTING MT5 TEST ===')
-          print(f'Attempting connection to Server: {server} with Login: {login_raw}')
+          print('=== CONNECTING TO BROKER ===')
+          print(f'Server: {server} | Login: {login_raw}')
 
-          if not mt5.initialize('C:\\Program Files\\MetaTrader 5\\terminal64.exe'):
-              print('MT5 initialize failed:', mt5.last_error())
+          # Direct handshake with portable=True and extended timeout
+          connected = mt5.initialize(
+              path='C:\\Program Files\\MetaTrader 5\\terminal64.exe',
+              login=int(login_raw),
+              password=password,
+              server=server,
+              timeout=60000,
+              portable=True
+          )
+
+          if not connected:
+              print('Initialize error:', mt5.last_error())
               exit(1)
 
-          authorized = mt5.login(int(login_raw), password=password, server=server)
-          if not authorized:
-              print('>>> LOGIN FAILED! Error:', mt5.last_error())
-              mt5.shutdown()
-              exit(1)
-
-          print('>>> LOGIN SUCCESSFUL! <<<')
+          print('>>> INITIALIZE & LOGIN SUCCESSFUL! <<<')
           acc = mt5.account_info()
-          print(f'Account Name: {acc.name}')
-          print(f'Account Balance: {acc.balance} {acc.currency}')
-          print(f'Account Server: {acc.server}')
+          if acc:
+              print(f'Account Name: {acc.name}')
+              print(f'Balance: {acc.balance} {acc.currency}')
+              print(f'Connected Server: {acc.server}')
 
-          # Test Symbol Selection
+          # Check BTC Symbol
           symbol = 'BTCUSDm'
           if not mt5.symbol_select(symbol, True):
-              print(f'Symbol {symbol} not found! Searching for available BTC symbols on broker...')
-              symbols = mt5.symbols_get('*BTC*')
-              if symbols:
-                  print('Available symbols on your broker:', [s.name for s in symbols])
-                  symbol = symbols[0].name
+              print(f'{symbol} not default, scanning available cryptos...')
+              all_symbols = mt5.symbols_get('*BTC*')
+              if all_symbols:
+                  symbol = all_symbols[0].name
+                  print('Using available symbol:', symbol)
+                  mt5.symbol_select(symbol, True)
               else:
-                  print('No crypto symbols found.')
+                  print('No BTC symbol found on broker.')
                   mt5.shutdown()
                   exit(1)
 
-          # Place Test Order
-          price = mt5.symbol_info_tick(symbol).ask
-          point = mt5.symbol_info(symbol).point
+          time.sleep(1)
+          tick = mt5.symbol_info_tick(symbol)
+          if not tick:
+              print(f'Could not fetch price tick for {symbol}')
+              mt5.shutdown()
+              exit(1)
+
+          price = tick.ask
+          print(f'Current {symbol} Ask Price: {price}')
+
           request = {
               'action': mt5.TRADE_ACTION_DEAL,
               'symbol': symbol,
@@ -86,16 +132,16 @@ jobs:
               'tp': price * 1.01,
               'deviation': 20,
               'magic': 123456,
-              'comment': 'Python Test',
+              'comment': 'Ping Test',
               'type_time': mt5.ORDER_TIME_GTC,
               'type_filling': mt5.ORDER_FILLING_IOC,
           }
 
           result = mt5.order_send(request)
           if result.retcode != mt5.TRADE_RETCODE_DONE:
-              print(f'Order failed, retcode={result.retcode}, comment={result.comment}')
+              print(f'Order rejected by broker: retcode={result.retcode}, comment={result.comment}')
           else:
-              print(f'>>> SUCCESS! Trade placed! Ticket #{result.order} on {symbol} at {price} <<<')
+              print(f'>>> SUCCESS! TRADE PLACED! Ticket #{result.order} on {symbol} <<<')
 
           mt5.shutdown()
           "@
