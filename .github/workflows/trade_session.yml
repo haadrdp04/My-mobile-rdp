@@ -1,80 +1,58 @@
-name: Automated MT5 Trading Session
+name: Windows RDP with Exness MT5
 
 on:
   workflow_dispatch:
 
 jobs:
-  launch-trader:
+  build-rdp:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 360
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 1. Install Official Exness MT5
+      - name: 1. Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+
+      - name: 2. Enable Remote Desktop (RDP)
         run: |
-          Write-Host "Downloading Exness MT5..."
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -value 0
+          
+          # Set Runner password to: Trader@1234
+          $Password = ConvertTo-SecureString "Trader@1234" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
+
+      - name: 3. Pre-Install Official Exness MT5
+        run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "exness5setup.exe"
           Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
 
-      - name: 2. Compile Our EA
+      - name: 4. Place EA on Desktop & in MT5
         run: |
           $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
           if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
-
+          
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
           Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
+          # Compile EA to .ex5
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
-          Write-Host ">>> EA Compiled! <<<"
-
-      - name: 3. Create Login Config
-        env:
-          EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
-          EXNESS_PASSWORD: ${{ secrets.EXNESS_PASSWORD }}
-          EXNESS_SERVER: ${{ secrets.EXNESS_SERVER }}
-        run: |
-          $configContent = @"
-          [Common]
-          Login=$env:EXNESS_LOGIN
-          Password=$env:EXNESS_PASSWORD
-          Server=$env:EXNESS_SERVER
-
-          [Experts]
-          Enabled=1
-          Account=$env:EXNESS_LOGIN
-          AllowDLL=0
-
-          [Start]
-          Symbol=BTCUSDm
-          Period=M5
-          Expert=InstitutionalAlgoEA
-          "@
-          Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
-
-      - name: 4. Launch MT5 & Run Bot (150s)
-        run: |
-          Write-Host "Starting Exness MT5..."
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
           
-          # 150 seconds: enough time to open chart & fire trade
-          Start-Sleep -Seconds 150
+          # Copy to Desktop for easy drag-and-drop
+          Copy-Item -Path "$targetDir\InstitutionalAlgoEA.ex5" -Destination "$env:USERPROFILE\Desktop\InstitutionalAlgoEA.ex5" -Force -ErrorAction SilentlyContinue
 
-      - name: 5. PRINT BROKER & SYMBOL EVENTS
+      - name: 5. Keep RDP Alive
         run: |
-          Write-Host "=== LATEST BROKER & CHART EVENTS ==="
-          $allLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\Logs\*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime
-          if ($allLogs) {
-            Get-Content $allLogs[-1].FullName -Encoding Unicode | Select-Object -Last 35
-          }
-
-      - name: 6. PRINT BOT EXECUTION LOGS
-        run: |
-          Write-Host "=== EXPERT ADVISOR (TRADE) LOG ==="
-          $allEaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\MQL5\Logs\*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime
-          if ($allEaLogs) {
-            Get-Content $allEaLogs[-1].FullName -Encoding Unicode -Tail 35
-          } else {
-            Write-Host "No EA log found yet."
-          }
+          Write-Host "=========================================="
+          Write-Host " RDP IS LIVE ON TAILSCALE! "
+          Write-Host " User: runneradmin"
+          Write-Host " Pass: Trader@1234"
+          Write-Host "=========================================="
+          
+          # Keeps RDP open for 5.5 hours
+          Start-Sleep -Seconds 19800
