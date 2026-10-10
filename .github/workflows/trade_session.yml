@@ -12,17 +12,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 1. Install MT5
+      - name: 1. Install & Init MT5
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
           
-          $timeout = 30
-          while ($timeout -gt 0) {
-            if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") { break }
-            Start-Sleep -Seconds 3
-            $timeout--
-          }
+          # Initialize directory structure
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable"
+          Start-Sleep -Seconds 8
+          Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
 
       - name: 2. Compile EA and Verify .ex5
         run: |
@@ -32,17 +30,18 @@ jobs:
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
           Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
-          Write-Host "Compiling InstitutionalAlgoEA.mq5 to .ex5..."
-          # Wait synchronously for compilation to finish
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`" /log" -Wait
+          Write-Host "Compiling InstitutionalAlgoEA.mq5..."
+          # Specific log file target
+          $compileLog = "C:\Program Files\MetaTrader 5\compile.log"
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"$compileLog`"" -Wait
 
-          Start-Sleep -Seconds 4
+          Start-Sleep -Seconds 3
           $ex5File = "$targetDir\InstitutionalAlgoEA.ex5"
           if (Test-Path $ex5File) {
-            Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 created successfully! <<<"
+            Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 compiled with 0 errors! <<<"
           } else {
-            Write-Error "Compilation failed! Showing log:"
-            Get-ChildItem "$targetDir\*.log" | Get-Content -Encoding Unicode
+            Write-Host "Compile output:"
+            if (Test-Path $compileLog) { Get-Content $compileLog -Encoding Unicode }
             exit 1
           }
 
