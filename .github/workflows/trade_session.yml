@@ -12,12 +12,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install MT5 Silently
+      - name: 1. Install MT5
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
           
-          # Wait until terminal64.exe is fully on disk
           $timeout = 30
           while ($timeout -gt 0) {
             if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") { break }
@@ -25,123 +24,76 @@ jobs:
             $timeout--
           }
 
-      - name: Bypass First-Time Welcome Popup
-        env:
-          EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
-          EXNESS_SERVER: ${{ secrets.EXNESS_SERVER }}
+      - name: 2. Compile EA and Verify .ex5
         run: |
-          $configDir = "C:\Program Files\MetaTrader 5\Config"
-          if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force }
-          
-          # Writing common.ini suppresses the "Open Account" wizard
-          $commonIni = @"
-          [Common]
-          Login=$env:EXNESS_LOGIN
-          Server=$env:EXNESS_SERVER
+          $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
+          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
 
-          [Experts]
-          Enabled=1
-          "@
-          Set-Content -Path "$configDir\common.ini" -Value $commonIni
+          $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
+          Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
 
-      - name: Pre-launch MT5 Background Service
-        run: |
-          Write-Host "Starting MT5 service in portable mode..."
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable"
-          Start-Sleep -Seconds 12
+          Write-Host "Compiling InstitutionalAlgoEA.mq5 to .ex5..."
+          # Wait synchronously for compilation to finish
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`" /log" -Wait
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+          Start-Sleep -Seconds 4
+          $ex5File = "$targetDir\InstitutionalAlgoEA.ex5"
+          if (Test-Path $ex5File) {
+            Write-Host ">>> SUCCESS: InstitutionalAlgoEA.ex5 created successfully! <<<"
+          } else {
+            Write-Error "Compilation failed! Showing log:"
+            Get-ChildItem "$targetDir\*.log" | Get-Content -Encoding Unicode
+            exit 1
+          }
 
-      - name: Install MetaTrader5 Python Package
-        run: |
-          pip install MetaTrader5
-
-      - name: Run Live Broker Connection & Trade Test
+      - name: 3. Create Login Config
         env:
           EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
           EXNESS_PASSWORD: ${{ secrets.EXNESS_PASSWORD }}
           EXNESS_SERVER: ${{ secrets.EXNESS_SERVER }}
         run: |
-          python -c @"
-          import os
-          import time
-          import MetaTrader5 as mt5
+          $configContent = @"
+          [Common]
+          Login=$env:EXNESS_LOGIN
+          Password=$env:EXNESS_PASSWORD
+          Server=$env:EXNESS_SERVER
 
-          login_raw = os.environ.get('EXNESS_LOGIN')
-          password = os.environ.get('EXNESS_PASSWORD')
-          server = os.environ.get('EXNESS_SERVER')
+          [Experts]
+          Enabled=1
+          Account=$env:EXNESS_LOGIN
+          AllowDLL=0
 
-          print('=== CONNECTING TO BROKER ===')
-          print(f'Server: {server} | Login: {login_raw}')
+          [Start]
+          Symbol=BTCUSDm
+          Period=M5
+          Expert=InstitutionalAlgoEA
+          "@
+          Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-          # Direct handshake with portable=True and extended timeout
-          connected = mt5.initialize(
-              path='C:\\Program Files\\MetaTrader 5\\terminal64.exe',
-              login=int(login_raw),
-              password=password,
-              server=server,
-              timeout=60000,
-              portable=True
-          )
+      - name: 4. Launch MT5 & Run Bot
+        run: |
+          Write-Host "Starting MT5 in background..."
+          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
+          
+          Write-Host "Waiting 60 seconds for broker connection and first tick..."
+          Start-Sleep -Seconds 60
 
-          if not connected:
-              print('Initialize error:', mt5.last_error())
-              exit(1)
-
-          print('>>> INITIALIZE & LOGIN SUCCESSFUL! <<<')
-          acc = mt5.account_info()
-          if acc:
-              print(f'Account Name: {acc.name}')
-              print(f'Balance: {acc.balance} {acc.currency}')
-              print(f'Connected Server: {acc.server}')
-
-          # Check BTC Symbol
-          symbol = 'BTCUSDm'
-          if not mt5.symbol_select(symbol, True):
-              print(f'{symbol} not default, scanning available cryptos...')
-              all_symbols = mt5.symbols_get('*BTC*')
-              if all_symbols:
-                  symbol = all_symbols[0].name
-                  print('Using available symbol:', symbol)
-                  mt5.symbol_select(symbol, True)
-              else:
-                  print('No BTC symbol found on broker.')
-                  mt5.shutdown()
-                  exit(1)
-
-          time.sleep(1)
-          tick = mt5.symbol_info_tick(symbol)
-          if not tick:
-              print(f'Could not fetch price tick for {symbol}')
-              mt5.shutdown()
-              exit(1)
-
-          price = tick.ask
-          print(f'Current {symbol} Ask Price: {price}')
-
-          request = {
-              'action': mt5.TRADE_ACTION_DEAL,
-              'symbol': symbol,
-              'volume': 0.01,
-              'type': mt5.ORDER_TYPE_BUY,
-              'price': price,
-              'sl': price * 0.99,
-              'tp': price * 1.01,
-              'deviation': 20,
-              'magic': 123456,
-              'comment': 'Ping Test',
-              'type_time': mt5.ORDER_TIME_GTC,
-              'type_filling': mt5.ORDER_FILLING_IOC,
+      - name: 5. PRINT TERMINAL LOGS
+        run: |
+          Write-Host "=== TERMINAL LOG (BROKER CONNECTION) ==="
+          $logs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log" -ErrorAction SilentlyContinue
+          if ($logs) {
+            Get-Content $logs[-1].FullName -Encoding Unicode -Tail 40
+          } else {
+            Write-Host "No terminal log found."
           }
 
-          result = mt5.order_send(request)
-          if result.retcode != mt5.TRADE_RETCODE_DONE:
-              print(f'Order rejected by broker: retcode={result.retcode}, comment={result.comment}')
-          else:
-              print(f'>>> SUCCESS! TRADE PLACED! Ticket #{result.order} on {symbol} <<<')
-
-          mt5.shutdown()
-          "@
+      - name: 6. PRINT BOT EXECUTION LOGS
+        run: |
+          Write-Host "=== EXPERT ADVISOR LOG (TRADE EXECUTION) ==="
+          $eaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log" -ErrorAction SilentlyContinue
+          if ($eaLogs) {
+            Get-Content $eaLogs[-1].FullName -Encoding Unicode -Tail 40
+          } else {
+            Write-Host "No EA log found."
+          }
