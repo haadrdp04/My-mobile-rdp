@@ -1,77 +1,44 @@
-name: Automated MT5 Trading Session
+//+------------------------------------------------------------------+
+//|                                           ExnessConnectionTest   |
+//+------------------------------------------------------------------+
+#property copyright "Algo Test"
+#property version   "1.00"
+#property strict
 
-on:
-  workflow_dispatch:
+#include <Trade\Trade.mqh>
+CTrade trade;
 
-jobs:
-  launch-trader:
-    runs-on: windows-latest
-    timeout-minutes: 60
+int OnInit()
+{
+   Print("=== RUNNING EXNESS BITCOIN PING TEST ===");
+   
+   // Auto-detect Exness filling mode (Prevents error 10030)
+   uint filling = (uint)SymbolInfoInteger(_Symbol, SYMBOL_FILLING_MODE);
+   if((filling & SYMBOL_FILLING_FOK) != 0) trade.SetTypeFilling(ORDER_FILLING_FOK);
+   else if((filling & SYMBOL_FILLING_IOC) != 0) trade.SetTypeFilling(ORDER_FILLING_IOC);
+   else trade.SetTypeFilling(ORDER_FILLING_RETURN);
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+   trade.SetExpertMagicNumber(111222);
 
-      - name: Install MT5 Silently
-        run: |
-          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
-          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`""
-          
-          $timeout = 30
-          while ($timeout -gt 0) {
-            if (Test-Path "C:\Program Files\MetaTrader 5\terminal64.exe") {
-              Write-Host "MT5 successfully installed!"
-              break
-            }
-            Start-Sleep -Seconds 4
-            $timeout--
-          }
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   
+   // 1% Stop Loss and 1% Take Profit (Safe for BTC volatility)
+   double sl = NormalizeDouble(ask * 0.99, digits);
+   double tp = NormalizeDouble(ask * 1.01, digits);
 
-      - name: Copy & Compile Test EA
-        run: |
-          $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
-          if (-not (Test-Path $targetDir)) {
-            New-Item -ItemType Directory -Path $targetDir -Force
-          }
+   Print("Placing instant test BUY on ", _Symbol, " at Ask: ", ask);
+   bool success = trade.Buy(0.01, _Symbol, ask, sl, tp, "Exness BTC Ping Test");
 
-          $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
-          Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
+   if(success)
+      Print(">>> SUCCESS: Bitcoin test order placed on Exness! <<<");
+   else
+      Print(">>> Order failed. Error code: ", GetLastError());
 
-          & "C:\Program Files\MetaTrader 5\metaeditor64.exe" /compile:"$targetDir\InstitutionalAlgoEA.mq5" /log:"C:\Program Files\MetaTrader 5\compile.log"
-          
-          Start-Sleep -Seconds 5
-          if (Test-Path "C:\Program Files\MetaTrader 5\compile.log") {
-            Get-Content "C:\Program Files\MetaTrader 5\compile.log"
-          }
+   return(INIT_SUCCEEDED);
+}
 
-      - name: Generate Login Config for Exness
-        env:
-          EXNESS_LOGIN: ${{ secrets.EXNESS_LOGIN }}
-          EXNESS_PASSWORD: ${{ secrets.EXNESS_PASSWORD }}
-          EXNESS_SERVER: ${{ secrets.EXNESS_SERVER }}
-        run: |
-          $configContent = @"
-          [Common]
-          Login=$env:EXNESS_LOGIN
-          Password=$env:EXNESS_PASSWORD
-          Server=$env:EXNESS_SERVER
-
-          [Experts]
-          Enabled=1
-          Account=$env:EXNESS_LOGIN
-          AllowDLL=0
-
-          [Start]
-          Symbol=XAUUSDm
-          Period=M5
-          Expert=InstitutionalAlgoEA
-          "@
-          Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
-
-      - name: Run Bot Session
-        run: |
-          Write-Host "Connecting to Exness and firing test order..."
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:startup.ini"
-          
-          # Wait 3 minutes to verify execution
-          Start-Sleep -Seconds 180
+void OnTick()
+{
+   // Idle after test trade is fired
+}
