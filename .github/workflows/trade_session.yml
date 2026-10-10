@@ -12,16 +12,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 1. Install MT5 & Remove Demo Bloat
+      - name: 1. Install Official Exness MT5
         run: |
-          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
-          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
+          Write-Host "Downloading official Exness MT5 installer..."
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "exness5setup.exe"
           
-          # Delete built-in demo examples so MT5 doesn't waste 2 minutes compiling them
-          Write-Host "Removing demo bloat to make startup instant..."
-          $demoFolders = @("Examples", "Free Robots", "Free Indicators", "Advisors")
+          Write-Host "Installing Exness MT5..."
+          Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
+          
+          # Clean demo bloat
           Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5" -Directory -Recurse -ErrorAction SilentlyContinue | 
-            Where-Object { $demoFolders -contains $_.Name } | 
+            Where-Object { @("Examples", "Free Robots", "Free Indicators", "Advisors") -contains $_.Name } | 
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: 2. Compile Our EA
@@ -69,31 +70,37 @@ jobs:
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-      - name: 4. Launch MT5 & Run Bot (60s)
+      - name: 4. Launch MT5 & Run Bot
         run: |
-          Write-Host "Starting MT5 and connecting directly to broker..."
+          Write-Host "Starting Exness MT5..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
           
-          # Now boots in 3s, giving 55s purely for connection & trade execution
-          Start-Sleep -Seconds 60
+          Write-Host "Waiting 75 seconds for login, chart open, and trade..."
+          Start-Sleep -Seconds 75
 
-      - name: 5. PRINT BROKER CONNECTION LOGS
+      - name: 5. PRINT REAL BROKER CONNECTION LOGS
         run: |
-          Write-Host "=== BROKER & LOGIN EVENTS ==="
-          $logs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log" -ErrorAction SilentlyContinue
-          if ($logs) {
-            # Filter out all compilation lines completely
-            Get-Content $logs[-1].FullName -Encoding Unicode | Where-Object { $_ -notmatch "Compile" -and $_ -notmatch "Compiler" } | Select-Object -Last 30
+          Write-Host "=== SEARCHING ALL LOG LOCATIONS ==="
+          # Search both Program Files and AppData for the real terminal log
+          $allLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\Logs\*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime
+          
+          if ($allLogs) {
+            $latest = $allLogs[-1].FullName
+            Write-Host "Reading log: $latest"
+            Get-Content $latest -Encoding Unicode | Select-Object -Last 40
           } else {
-            Write-Host "No log file found."
+            Write-Host "No terminal log files found anywhere."
           }
 
       - name: 6. PRINT BOT EXECUTION LOGS
         run: |
-          Write-Host "=== EXPERT ADVISOR (TRADE) LOG ==="
-          $eaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log" -ErrorAction SilentlyContinue
-          if ($eaLogs) {
-            Get-Content $eaLogs[-1].FullName -Encoding Unicode -Tail 30
+          Write-Host "=== SEARCHING ALL EA LOG LOCATIONS ==="
+          $allEaLogs = Get-ChildItem -Path "C:\Program Files\MetaTrader 5\MQL5\Logs\*.log", "$env:APPDATA\MetaQuotes\Terminal\*\MQL5\Logs\*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime
+          
+          if ($allEaLogs) {
+            $latestEa = $allEaLogs[-1].FullName
+            Write-Host "Reading EA log: $latestEa"
+            Get-Content $latestEa -Encoding Unicode -Tail 40
           } else {
             Write-Host "No EA log found yet."
           }
