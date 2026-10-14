@@ -1,15 +1,12 @@
 name: 100% Autopilot Gold Algo Trading
 
 on:
-  workflow_dispatch: # Allows 1-tap start from phone anytime
-  schedule:
-    # Auto-triggers at London/NY high-volume session (12:00 UTC, Mon-Fri)
-    - cron: '0 12 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   auto-trade:
     runs-on: windows-latest
-    timeout-minutes: 340 # Runs for 5.5 hours
+    timeout-minutes: 340
 
     steps:
       - name: 1. Pull Repository
@@ -31,13 +28,6 @@ jobs:
 
           Write-Host "Compiling Pro Gold Bot..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
-          
-          if (Test-Path "$targetDir\InstitutionalAlgoEA.ex5") {
-            Write-Host ">>> SUCCESS: Bot compiled cleanly! <<<"
-          } else {
-            Write-Error "Compile failed."
-            exit 1
-          }
 
       - name: 4. Inject Autopilot Startup Configuration
         env:
@@ -52,11 +42,11 @@ jobs:
           Server=$env:EXNESS_SERVER
 
           [Experts]
-Enabled=1
-Account=474682799
-AllowDLL=0
-WebRequest=1
-WebRequestUrl=https://api.telegram.org
+          Enabled=1
+          Account=474682799
+          AllowDLL=0
+          WebRequest=1
+          WebRequestUrl=https://api.telegram.org
 
           [Start]
           Symbol=XAUUSDm
@@ -65,7 +55,7 @@ WebRequestUrl=https://api.telegram.org
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
 
-      - name: 5. Enable Optional Tailscale (Only if you want to peek)
+      - name: 5. Enable Optional Tailscale
         env:
           TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
@@ -75,23 +65,14 @@ WebRequestUrl=https://api.telegram.org
             Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
             Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
             net user runneradmin "MobileRDPPassword123!"
-            Write-Host "Optional RDP ready on Tailscale IP:"
-            & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           }
 
       - name: 6. Launch MT5 Autopilot & Trade Session
         run: |
-          Write-Host "=================================================="
-          Write-Host ">>> LAUNCHING AUTONOMOUS GOLD TRADING SESSION <<<"
-          Write-Host "Symbol: XAUUSDm | Timeframe: M15"
-          Write-Host "=================================================="
-          
+          Write-Host "Starting MT5 in background..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
-          
-          # Runs continuously for 5 hours without human intervention
           Start-Sleep -Seconds 18000
 
       - name: 7. Graceful Session End
         run: |
-          Write-Host "Session complete. Closing terminal..."
           Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
