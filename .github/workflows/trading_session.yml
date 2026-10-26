@@ -7,7 +7,6 @@ jobs:
   auto-trade:
     runs-on: windows-latest
     timeout-minutes: 340
-    # ... rest of the file
 
     steps:
       - name: 1. Pull Repository
@@ -24,14 +23,13 @@ jobs:
         run: |
           $targetDir = "C:\Program Files\MetaTrader 5\MQL5\Experts"
           if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
-
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
           if ($eaPath) {
             Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
             Write-Host "Compiling Pro Gold Bot..."
             Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
           } else {
-            Write-Host "WARNING: InstitutionalAlgoEA.mq5 not found in repo"
+            Write-Host "WARNING: InstitutionalAlgoEA.mq5 not found"
           }
 
       - name: 4. Inject Autopilot Startup Configuration
@@ -68,66 +66,40 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          # Enable RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
-
-          # Set a clean RDP password from secret (fallback if secret missing)
           $rdpPass = if ($env:RDP_PASSWORD) { $env:RDP_PASSWORD } else { "MobileRDPPassword123!" }
           net user runneradmin $rdpPass
 
-          # Install + start Tailscale
           if ($env:TAILSCALE_KEY) {
             winget install --id Tailscale.Tailscale --silent --accept-source-agreements --accept-package-agreements
             Start-Sleep -Seconds 8
             & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_KEY --hostname="gold-auto-trader" --accept-routes
             Start-Sleep -Seconds 12
-
-            # Get Tailscale IP / hostname
-            $tsStatus = & "C:\Program Files\Tailscale\tailscale.exe" status --json | ConvertFrom-Json
-            $tsIP = ($tsStatus.Peer.PSObject.Properties.Value | Where-Object { $_.HostName -like "*gold-auto-trader*" }).TailscaleIPs[0]
-            if (-not $tsIP) {
-              $tsIP = (& "C:\Program Files\Tailscale\tailscale.exe" ip -4)
-            }
+            $tsIP = (& "C:\Program Files\Tailscale\tailscale.exe" ip -4)
             $hostname = "gold-auto-trader"
           } else {
             $tsIP = "Tailscale key missing"
             $hostname = "no-tailscale"
           }
 
-          # Notify you on Telegram with connection details
           if ($env:TELEGRAM_BOT_TOKEN -and $env:TELEGRAM_CHAT_ID) {
-            $msg = @"
-🚀 <b>CLOUD SESSION LIVE</b>
-
-🖥️ Hostname: <code>$hostname</code>
-🌐 Tailscale IP: <code>$tsIP</code>
-👤 User: <code>runneradmin</code>
-🔑 Password: <code>$rdpPass</code>
-
-MT5 + Gold EA starting now.
-Session will run ~5.5 hours.
-"@
+            $msg = "CLOUD SESSION LIVE`nHostname: $hostname`nTailscale IP: $tsIP`nUser: runneradmin`nPassword: $rdpPass`nMT5 starting now."
             $body = @{
               chat_id = $env:TELEGRAM_CHAT_ID
               text = $msg
-              parse_mode = "HTML"
             } | ConvertTo-Json
-
             Invoke-RestMethod -Uri "https://api.telegram.org/bot$($env:TELEGRAM_BOT_TOKEN)/sendMessage" -Method Post -Body $body -ContentType "application/json"
             Write-Host "Telegram notification sent"
-          } else {
-            Write-Host "Telegram secrets missing - skipping notify"
           }
 
-      - name: 6. Launch MT5 Autopilot & Trade Session
+      - name: 6. Launch MT5 Autopilot
         run: |
-          Write-Host "Starting MT5 in background..."
+          Write-Host "Starting MT5..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
-          # Keep the job alive for almost the full timeout
           Start-Sleep -Seconds 19800
 
-      - name: 7. Graceful Session End
+      - name: 7. Graceful End
         if: always()
         run: |
           Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
