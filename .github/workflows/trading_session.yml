@@ -17,6 +17,7 @@ jobs:
           Write-Host "Installing Exness MT5..."
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "exness5setup.exe"
           Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto /path:`"C:\Program Files\MetaTrader 5`"" -Wait
+          Start-Sleep -Seconds 15
 
       - name: 3. Auto-Compile Pro Gold EA
         run: |
@@ -24,10 +25,13 @@ jobs:
           if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
 
           $eaPath = Get-ChildItem -Recurse -Filter "InstitutionalAlgoEA.mq5" | Select-Object -ExpandProperty FullName -First 1
-          Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
-
-          Write-Host "Compiling Pro Gold Bot..."
-          Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
+          if ($eaPath) {
+            Copy-Item -Path $eaPath -Destination "$targetDir\InstitutionalAlgoEA.mq5" -Force
+            Write-Host "Compiling Pro Gold Bot..."
+            Start-Process -FilePath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -ArgumentList "/compile:`"$targetDir\InstitutionalAlgoEA.mq5`"", "/log:`"C:\Program Files\MetaTrader 5\compile.log`"" -Wait
+          } else {
+            Write-Host "WARNING: InstitutionalAlgoEA.mq5 not found in repo"
+          }
 
       - name: 4. Inject Autopilot Startup Configuration
         env:
@@ -43,7 +47,7 @@ jobs:
 
           [Experts]
           Enabled=1
-          Account=474682799
+          Account=$env:EXNESS_LOGIN
           AllowDLL=0
           WebRequest=1
           WebRequestUrl=https://api.telegram.org
@@ -54,25 +58,76 @@ jobs:
           Expert=InstitutionalAlgoEA
           "@
           Set-Content -Path "C:\Program Files\MetaTrader 5\startup.ini" -Value $configContent
+          Write-Host "startup.ini written"
 
-      - name: 5. Enable Optional Tailscale
+      - name: 5. Enable Tailscale + RDP + Notify IP
         env:
           TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
+          # Enable RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+
+          # Set a clean RDP password from secret (fallback if secret missing)
+          $rdpPass = if ($env:RDP_PASSWORD) { $env:RDP_PASSWORD } else { "MobileRDPPassword123!" }
+          net user runneradmin $rdpPass
+
+          # Install + start Tailscale
           if ($env:TAILSCALE_KEY) {
             winget install --id Tailscale.Tailscale --silent --accept-source-agreements --accept-package-agreements
-            & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_KEY --hostname="gold-auto-trader"
-            Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-            Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-            net user runneradmin "MobileRDPPassword123!"
+            Start-Sleep -Seconds 8
+            & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_KEY --hostname="gold-auto-trader" --accept-routes
+            Start-Sleep -Seconds 12
+
+            # Get Tailscale IP / hostname
+            $tsStatus = & "C:\Program Files\Tailscale\tailscale.exe" status --json | ConvertFrom-Json
+            $tsIP = ($tsStatus.Peer.PSObject.Properties.Value | Where-Object { $_.HostName -like "*gold-auto-trader*" }).TailscaleIPs[0]
+            if (-not $tsIP) {
+              $tsIP = (& "C:\Program Files\Tailscale\tailscale.exe" ip -4)
+            }
+            $hostname = "gold-auto-trader"
+          } else {
+            $tsIP = "Tailscale key missing"
+            $hostname = "no-tailscale"
+          }
+
+          # Notify you on Telegram with connection details
+          if ($env:TELEGRAM_BOT_TOKEN -and $env:TELEGRAM_CHAT_ID) {
+            $msg = @"
+🚀 <b>CLOUD SESSION LIVE</b>
+
+🖥️ Hostname: <code>$hostname</code>
+🌐 Tailscale IP: <code>$tsIP</code>
+👤 User: <code>runneradmin</code>
+🔑 Password: <code>$rdpPass</code>
+
+MT5 + Gold EA starting now.
+Session will run ~5.5 hours.
+"@
+            $body = @{
+              chat_id = $env:TELEGRAM_CHAT_ID
+              text = $msg
+              parse_mode = "HTML"
+            } | ConvertTo-Json
+
+            Invoke-RestMethod -Uri "https://api.telegram.org/bot$($env:TELEGRAM_BOT_TOKEN)/sendMessage" -Method Post -Body $body -ContentType "application/json"
+            Write-Host "Telegram notification sent"
+          } else {
+            Write-Host "Telegram secrets missing - skipping notify"
           }
 
       - name: 6. Launch MT5 Autopilot & Trade Session
         run: |
           Write-Host "Starting MT5 in background..."
           Start-Process -FilePath "C:\Program Files\MetaTrader 5\terminal64.exe" -ArgumentList "/portable /config:`"C:\Program Files\MetaTrader 5\startup.ini`""
-          Start-Sleep -Seconds 18000
+          # Keep the job alive for almost the full timeout
+          Start-Sleep -Seconds 19800
 
       - name: 7. Graceful Session End
+        if: always()
         run: |
           Stop-Process -Name "terminal64" -Force -ErrorAction SilentlyContinue
+          Write-Host "Session ended"
