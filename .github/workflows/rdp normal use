@@ -1,0 +1,66 @@
+name: Tailscale Secure RDP with Cursor AI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Connect to Tailscale Network
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Install Cursor AI and Dependencies
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          
+          Write-Host "Installing Cursor AI Editor..."
+          choco install cursor -y --no-progress
+          
+          Write-Host "Cursor AI successfully installed to the runner environment."
+
+      - name: Configure Windows RDP Environment
+        run: |
+          Write-Host "Enabling Remote Desktop Protocol Services..."
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          Write-Host "Lowering password complexity requirements for numeric password..."
+          secedit /export /cfg c:\sec.cfg
+          (Get-Content c:\sec.cfg) -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' | Set-Content c:\sec.cfg
+          secedit /configure /db $env:windir\security\local.sdb /cfg c:\sec.cfg /areas SECURITYPOLICY
+          
+          Write-Host "Creating dedicated RDP user account (runneradmin)..."
+          $Password = ConvertTo-SecureString "112233445566" -AsPlainText -Force
+          New-LocalUser -Name "runneradmin" -Password $Password -Description "Secure RDP Workflow User" -PasswordNeverExpires $true
+          
+          Write-Host "Elevating user privileges..."
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin"
+          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin"
+
+      - name: Output Connection Details
+        run: |
+          Write-Host "=========================================================================="
+          Write-Host "                   YOUR SECURE TAILSCALE RDP IS READY                      "
+          Write-Host "=========================================================================="
+          Write-Host "1. Fetch the Tailscale IP of this runner from your Tailscale Admin Console."
+          Write-Host "2. Launch your local RDP client."
+          Write-Host "3. Target IP: [Your Runner's Tailscale IP]"
+          Write-Host "4. Username: runneradmin"
+          Write-Host "5. Password: [Your configured numeric password]"
+          Write-Host "=========================================================================="
+
+      - name: Keep Runner Session Alive
+        run: |
+          Write-Host "Session active. Loop running to prevent early workflow termination..."
+          $timeout = New-TimeSpan -Hours 6
+          $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+          while ($stopwatch.Elapsed -lt $timeout) {
+              Start-Sleep -Seconds 30
+          }
