@@ -13,7 +13,7 @@ jobs:
       - name: Connect to Tailscale Network
         uses: tailscale/github-action@v3
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
       - name: Install Cursor AI and Dependencies
         run: |
@@ -53,7 +53,7 @@ jobs:
           Write-Host "2. Launch your local RDP client."
           Write-Host "3. Target IP: [Your Runner's Tailscale IP]"
           Write-Host "4. Username: runneradmin"
-          Write-Host "5. Password: [Your configured numeric password]"
+          Write-Host "5. Password: 112233445566"
           Write-Host "=========================================================================="
 
       - name: Keep Runner Session Alive
