@@ -13,7 +13,7 @@ jobs:
         shell: powershell
         run: |
           $username = "runneradmin"
-          $password = "112233445566"
+          $password = "RdpPass@112233"
           
           # Force update password using native Windows net tool to bypass policy exceptions
           Write-Host "Configuring password for $username..."
@@ -57,7 +57,7 @@ jobs:
           Write-Host "      TAILSCALE RDP ACTIVE SESSION INFRASTRUCTURE"
           Write-Host "=========================================================="
           Write-Host " Connection Target IP : $tsIp"
-          Write-Host " Access Credentials   : runneradmin / 112233445566"
+          Write-Host " Access Credentials   : runneradmin / RdpPass@112233"
           Write-Host "=========================================================="
           Write-Host "Keep this action runner log tab open to sustain your session."
           
