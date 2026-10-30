@@ -1,66 +1,79 @@
-name: Tailscale Secure RDP with Cursor AI
+name: Windows RDP via Tailscale
 
 on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
-    runs-on: windows-2025
+  rdp-session:
+    runs-on: windows-latest
+    timeout-minutes: 360 # 6 hours maximum runtime
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Configure RDP User
+        shell: powershell
+        run: |
+          $username = "runneradmin"
+          $password = "112233445566"
+          
+          # Create local administrator user
+          $secPassword = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $username -Password $secPassword -Description "RDP Access User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          # Enable Remote Desktop service and configure firewall
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name "TermService" -StartupType Automatic
+          Start-Service -Name "TermService" -WarningAction SilentlyContinue
+          
+          Write-Host "=========================================="
+          Write-Host "RDP CREDENTIALS CONFIGURED SUCCESSFULLY"
+          Write-Host "Username: $username"
+          Write-Host "Password: $password"
+          Write-Host "=========================================="
 
-      - name: Connect to Tailscale Network
-        uses: tailscale/github-action@v3
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
-
-      - name: Install Cursor AI and Dependencies
+      - name: Setup Cursor AI via Chocolatey
+        shell: powershell
         run: |
           Set-ExecutionPolicy Bypass -Scope Process -Force
           [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
           
-          Write-Host "Installing Cursor AI Editor..."
-          choco install cursor -y --no-progress
-          
-          Write-Host "Cursor AI successfully installed to the runner environment."
+          Write-Host "Installing Cursor AI..."
+          # Direct setup URL used due to occasional Chocolatey package indexing drops
+          $url = "https://cursor.sh"
+          $output = "$env:TEMP\CursorSetup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/S" -Wait
+          Write-Host "Cursor AI installed successfully."
 
-      - name: Configure Windows RDP Environment
-        run: |
-          Write-Host "Enabling Remote Desktop Protocol Services..."
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          Write-Host "Lowering password complexity requirements for numeric password..."
-          secedit /export /cfg c:\sec.cfg
-          (Get-Content c:\sec.cfg) -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' | Set-Content c:\sec.cfg
-          secedit /configure /db $env:windir\security\local.sdb /cfg c:\sec.cfg /areas SECURITYPOLICY
-          
-          Write-Host "Creating dedicated RDP user account (runneradmin)..."
-          $Password = ConvertTo-SecureString "112233445566" -AsPlainText -Force
-          New-LocalUser -Name "runneradmin" -Password $Password -Description "Secure RDP Workflow User" -PasswordNeverExpires $true
-          
-          Write-Host "Elevating user privileges..."
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin"
-          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin"
+      - name: Connect to Tailscale Network
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: gh-win-runner
 
-      - name: Output Connection Details
+      - name: Maintain Active Connection Session
+        shell: powershell
         run: |
-          Write-Host "=========================================================================="
-          Write-Host "                   YOUR SECURE TAILSCALE RDP IS READY                      "
-          Write-Host "=========================================================================="
-          Write-Host "1. Fetch the Tailscale IP of this runner from your Tailscale Admin Console."
-          Write-Host "2. Launch your local RDP client."
-          Write-Host "3. Target IP: [Your Runner's Tailscale IP]"
-          Write-Host "4. Username: runneradmin"
-          Write-Host "5. Password: 112233445566"
-          Write-Host "=========================================================================="
-
-      - name: Keep Runner Session Alive
-        run: |
-          Write-Host "Session active. Loop running to prevent early workflow termination..."
+          Write-Host "=========================================================="
+          Write-Host "FETCHING IP ADDRESS TO CONNECT..."
+          
+          # Retrieve the assigned Tailscale network IP
+          $tsIp = (tailscale ip -4).Trim()
+          
+          Write-Host "=========================================================="
+          Write-Host "      TAILSCALE RDP ACTIVE SESSION INFRASTRUCTURE"
+          Write-Host "=========================================================="
+          Write-Host " Connection Target IP : $tsIp"
+          Write-Host " Access Credentials   : runneradmin / 112233445566"
+          Write-Host "=========================================================="
+          Write-Host "Keep this action runner log tab open to sustain your session."
+          
+          # Loop execution block to keep runner alive for the duration limits
           $timeout = New-TimeSpan -Hours 6
-          $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-          while ($stopwatch.Elapsed -lt $timeout) {
-              Start-Sleep -Seconds 30
+          $sw = [diagnostics.stopwatch]::StartNew()
+          while ($sw.Elapsed -lt $timeout) {
+              Start-Sleep -Seconds 60
+              Write-Host "Session heartbeat status check: Active. Elapsed time: $($sw.Elapsed.ToString('hh\:mm\:ss'))"
           }
