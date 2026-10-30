@@ -14,12 +14,18 @@ jobs:
         run: |
           $username = "runneradmin"
           $password = "112233445566"
-          
-          # Create local administrator user
           $secPassword = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name $username -Password $secPassword -Description "RDP Access User"
-          Add-LocalGroupMember -Group "Administrators" -Member $username
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          # Check if user already exists
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+              Write-Host "User $username already exists. Updating password..."
+              Set-LocalUser -Name $username -Password $secPassword
+          } else {
+              Write-Host "Creating new local user $username..."
+              New-LocalUser -Name $username -Password $secPassword -Description "RDP Access User"
+              Add-LocalGroupMember -Group "Administrators" -Member $username
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          }
           
           # Enable Remote Desktop service and configure firewall
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
