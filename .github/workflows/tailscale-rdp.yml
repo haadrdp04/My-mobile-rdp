@@ -33,20 +33,6 @@ jobs:
           Write-Host "Password: $password"
           Write-Host "=========================================="
 
-      - name: Setup Cursor AI via Chocolatey
-        shell: powershell
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          
-          Write-Host "Installing Cursor AI..."
-          # Direct setup URL used due to occasional Chocolatey package indexing drops
-          $url = "https://cursor.sh"
-          $output = "$env:TEMP\CursorSetup.exe"
-          Invoke-WebRequest -Uri $url -OutFile $output
-          Start-Process -FilePath $output -ArgumentList "/S" -Wait
-          Write-Host "Cursor AI installed successfully."
-
       - name: Connect to Tailscale Network
         uses: tailscale/github-action@v4
         with:
